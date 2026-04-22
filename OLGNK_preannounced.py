@@ -1,4 +1,3 @@
-
 from types import SimpleNamespace
 from copy import deepcopy
 import numpy as np
@@ -124,8 +123,7 @@ class AnnouncedTransferOLG:
     def system_matrix_given_policy(self, psi: float, phi: float, tau_d: float) -> np.ndarray:
         """
         Time-invariant 3x3 matrix for the homogeneous system (e_t = 0).
-        This is used for determinacy checks and matches the s=0 baseline case
-        after switching from q_t=d_t+e_t to d_t with no forcing.
+        This is used for determinacy checks and matches the s=0 baseline case.
         """
         par = self.par
         beta, omega = par.beta, par.omega
@@ -229,8 +227,6 @@ class AnnouncedTransferOLG:
                with terminal condition pi_{H+1}=0 used in the last equation
             4. date-0 debt jump condition d_0 = -Dbar * pi_0
 
-        This matches the previous recursive code's truncation scheme exactly:
-        y_{H+1} and pi_{H+1} are set to zero, while d_{H+1} is endogenous.
         """
         par = self.par
         eq = self.eqsys
@@ -349,6 +345,16 @@ class AnnouncedTransferOLG:
         sol.nu_price = float(price_gain / denom)
         sol.nu_total = float((tax_gain + price_gain) / denom)
 
+        # full tax rule
+        sol.tax_rule = par.tau_y * sol.y + par.tau_d * (sol.d + sol.e) - sol.e
+
+        # tax rule excluding the direct transfer term -e_t
+        sol.tax_no_direct_transfer = par.tau_y * sol.y + par.tau_d * (sol.d + sol.e)
+
+        # optional decomposition
+        sol.tax_base_part = par.tau_y * sol.y
+        sol.debt_feedback_part = par.tau_d * (sol.d + sol.e)
+
         return sol
 
     # =========================
@@ -386,6 +392,9 @@ class AnnouncedTransferOLG:
                         sol.debt_end = sol.debt_end[:T_plot + 1]
                         sol.d = sol.d[:T_plot + 1]
                         sol.e = sol.e[:T_plot + 1]
+                        sol.tax_no_direct_transfer = sol.tax_no_direct_transfer[:T_plot + 1]
+                        sol.tax_base_part = sol.tax_base_part[:T_plot + 1]
+                        sol.debt_feedback_part = sol.debt_feedback_part[:T_plot + 1]
 
                         self.sol_all.results.append(deepcopy(sol))
                         self.sol_all.tau_list.append(float(tau_d))
@@ -598,7 +607,7 @@ class AnnouncedTransferOLG:
             ax.set_ylabel(r"")
             ax.set_xlim(0, selected_results[0].t[-1])
             ax.grid(True, alpha=0.25)
-            ax.set_ylim(-0.001,0.001)
+            ax.set_ylim(None,None)
 
             # Panel 3: Inflation / nominal / real rate
             ax = axes[1, 0]
@@ -844,6 +853,103 @@ class AnnouncedTransferOLG:
             })
         return out
 
+    def plot_tax_rule(
+        self,
+        delay=0,
+        selected_tau_d=(0.0, 0.1, 0.3, 0.5, 1.0),
+        tau_d_grid=None,
+        figsize=(9.5, 6.0),
+        savepath=None,
+        horizon=None,
+    ):
+        """
+        Plot the tax-rule path
+
+            t_t = tau_y y_t + tau_d (d_t + e_t) - e_t
+
+        for a fixed implementation delay and one or several values of tau_d.
+
+        Note:
+        This is the tax variable t_t in the model (deviation from steady state,
+        scaled by steady-state output), not a literal statutory tax rate.
+        """
+        if horizon is None:
+            horizon = self.par.solve_horizon
+
+        if tau_d_grid is None:
+            tau_d_grid = np.sort(
+                np.concatenate((
+                    np.linspace(0.0, 1.0, 301),
+                    np.array([0.085, 0.026, 0.004])
+                ))
+            )
+
+        self.solve_tau_sweep_fixed_delay(delay=delay, tau_d_grid=tau_d_grid, horizon=horizon)
+
+        if len(self.sol_all.results) == 0:
+            raise RuntimeError("No determinate tau_d values were found, so nothing can be plotted.")
+
+        selected_results = []
+        missing_tau = []
+
+        for tau_d in selected_tau_d:
+            found = False
+            for sol in self.sol_all.results:
+                if abs(sol.tau_d - tau_d) < 1e-9:
+                    selected_results.append(sol)
+                    found = True
+                    break
+            if not found:
+                missing_tau.append(tau_d)
+
+        if len(selected_results) == 0:
+            raise RuntimeError("None of the selected tau_d values produced a unique bounded equilibrium.")
+
+        if len(missing_tau) > 0 and self.verbose:
+            print(f"Warning: no unique bounded equilibrium for tau_d = {missing_tau}")
+
+        line_colors = self._get_line_colors(len(selected_results))
+
+        with mpl.rc_context({
+            "font.family": "serif",
+            "font.serif": ["Times New Roman", "DejaVu Serif"],
+            "font.size": 13,
+            "axes.titlesize": 17,
+            "axes.labelsize": 14,
+            "legend.fontsize": 12,
+            "xtick.labelsize": 12,
+            "ytick.labelsize": 12,
+            "mathtext.fontset": "stix",
+        }):
+            fig, ax = plt.subplots(1, 1, figsize=figsize, constrained_layout=True)
+
+            for color, res in zip(line_colors, selected_results):
+                ax.plot(res.t, res.tax_no_direct_transfer, lw=2.8, color=color, label=rf"$\tau_d={res.tau_d:.3f}$")
+
+            if delay > 0:
+                ax.axvline(delay, color="black", linestyle="--", linewidth=1.0, alpha=0.8)
+
+            ax.axhline(0.0, color="black", linewidth=1.0, alpha=0.7)
+            ax.set_title(r"Tax rule $t_t$")
+            ax.set_xlabel(r"$t$")
+            ax.set_ylabel(r"$t_t$")
+            ax.set_xlim(0, selected_results[0].t[-1])
+            ax.grid(True, alpha=0.25)
+            ax.legend(loc="best", frameon=True)
+            
+
+            tmax = int(selected_results[0].t[-1])
+            xticks = np.arange(0, tmax + 1, 10)
+            ax.set_xticks(xticks)
+
+            if savepath is not None:
+                fig.savefig(savepath, dpi=200, bbox_inches="tight")
+                if self.verbose:
+                    print(f"saved to: {savepath}")
+
+            plt.show()
+            plt.close(fig)
+
 
 model = AnnouncedTransferOLG()
 par = model.par
@@ -869,5 +975,6 @@ par.solve_horizon = 500
 # max delay used in delay sweeps
 par.max_delay = 80
 
+# model.plot_tax_rule(delay=20)
 model.plot_announced_irfs(delay=20)
 model.plot_self_financing_vs_delay()
