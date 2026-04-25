@@ -657,6 +657,7 @@ class Taud_taylor_OLG:
                 print(f"saved to: {savepath}")
 
             plt.show()
+            fig.savefig(self.figname, dpi=600, bbox_inches="tight")
             plt.close(fig)
 
     def plot_self_financing_grid(self, psi_list, phi_list, tau_d_grid=None, figsize=(14, 10), savepath=None):
@@ -1234,7 +1235,7 @@ class Taud_taylor_OLG:
 
     def run(self):
         self.compute_tau_sweep()
-        self.plot_eps0_irfs(selected_tau_d=[0.085,0.026,0.004])
+        self.plot_eps0_irfs(selected_tau_d=[0.09,0.1,0.12,0.2,0.3])
         #self.plot_eps0_irfs(selected_tau_d=[0.1,0.11,0.13,0.17,0.2])
         # self.plot_chis()
 
@@ -1243,17 +1244,18 @@ model = Taud_taylor_OLG()
 
 par = model.par
 par.beta  = 0.99**0.25
-par.omega = 0.865
+par.omega = 0.75
 par.tau_y = 1.0 / 3.0
 par.sigma = 1.0
-par.kappa = 0.0062
+par.kappa = 0.1
 par.Dbar  = 1.04
-par.psi   = 0.5 + 1.0 / par.beta 
-par.phi   = 0.5 - par.kappa / par.beta
+par.psi   = 0.5+ 1.0 / par.beta 
+par.phi   = 0.5- par.kappa / par.beta
 par.tau_d = None
 par.T = 30
 
 
+model.figname = "panel_thm1_moes.png"
 model.run()
 
 # model.plot_self_financing_grid(

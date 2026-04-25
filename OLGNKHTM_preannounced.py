@@ -1190,7 +1190,7 @@ class PreannouncedDeficit_OLG:
                 fig.align_ylabels([axes[0, 0], axes[1, 0]])
 
                 if savepath is not None:
-                    fig.savefig(savepath, dpi=200, bbox_inches="tight")
+                    fig.savefig(savepath, dpi=600, bbox_inches="tight")
                     if self.verbose:
                         print(f"saved to: {savepath}")
 
@@ -1293,7 +1293,7 @@ class PreannouncedDeficit_OLG:
                 )
 
                 if savepath is not None:
-                    fig.savefig(savepath, dpi=200, bbox_inches="tight")
+                    fig.savefig(savepath, dpi=600, bbox_inches="tight")
                     if self.verbose:
                         print(f"saved to: {savepath}")
 
@@ -1579,15 +1579,14 @@ if __name__ == "__main__":
     par.Dbar = 1.04
 
     # Active real-rate rule:
-    # r_t = 0.5*y_t + 0.5*pi_t
-    par.alpha_y = 0.5
-    par.alpha_pi = 0.5
+    # r_t = 0.08*y_t + 1.04*pi_t
+    par.alpha_y = 0.08
+    par.alpha_pi = 1.04
 
     par.T = 500
     par.announce_t = 0
     par.implement_t = 20
-    par.x_plot_max = 30
-    par.horizon_x_max = 40
+    par.horizon_x_max = 80 # sweep horizon
 
     # ================================================================
     # Y-LIMIT CONTROL PANEL
@@ -1611,16 +1610,13 @@ if __name__ == "__main__":
     # ================================================================
 
     YLIMS = {
-        "fig1_output": None,
-        "fig1_debt": None,
+        "fig1_output": (None,None),
+        "fig1_debt": (None, None),
         "fig1_rates_left": None,
         "fig1_rates_right": None,
 
         # Figure 1 self-financing subplot
-        "fig1_self_financing": (0, 0.5),
-
-        # Standalone self-financing-vs-tau plot
-        "self_financing_vs_tau": (0, None),
+        "fig1_self_financing": (0, 1.0),
 
         # Implementation-delay plot
         "delay_sweep": (0, None),
@@ -1629,7 +1625,7 @@ if __name__ == "__main__":
 
     model.run(
         truncation_T=600,
-        x_plot_max=30,
+        x_plot_max=40,
         tau_d_list=[0.004, 0.026, 0.085],
         # tau_d_list=[0.0, 0.1, 0.3, 0.5, 1.0],
         savepath_main="panel_active_delay20.png",
