@@ -960,12 +960,12 @@ par.tau_y = 1.0 / 3.0
 par.sigma = 1.0
 par.kappa = 0.0062
 par.Dbar  = 1.04
-par.psi   = 0.5 + 1.0 / par.beta
-par.phi   = 0.5 - par.kappa / par.beta
+par.psi   = + 1.0 / par.beta
+par.phi   = - par.kappa / par.beta
 par.tau_d = None
 
 # plotting horizon
-par.T = 40
+par.T = 30
 
 # truncation horizon used for backward induction
 # choose this large enough so the terminal steady-state condition is a very
@@ -976,5 +976,5 @@ par.solve_horizon = 500
 par.max_delay = 80
 
 # model.plot_tax_rule(delay=20)
-model.plot_announced_irfs(delay=20)
+model.plot_announced_irfs(delay=0)
 model.plot_self_financing_vs_delay()

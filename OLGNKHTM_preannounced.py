@@ -913,7 +913,7 @@ if __name__ == "__main__":
     par.Dbar = 1.04
     par.alpha_y = 0.0
     par.alpha_pi = 0.0
-    par.T = 500
+    par.T = 1000
     par.announce_t = 0
     par.implement_t = 0
     par.x_plot_max = 30
@@ -921,7 +921,7 @@ if __name__ == "__main__":
 
     model.run(
         truncation_T=500,
-        x_plot_max=50,
-        horizon_x_max=50,
+        x_plot_max=30,
+        horizon_x_max=30,
         savepath="preannounced_deficit_multi_tau_controls_mu.png",
     )

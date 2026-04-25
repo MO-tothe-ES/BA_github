@@ -263,7 +263,9 @@ class Taud_taylor_OLG:
                     [0.97, 0.67, 0.78],
                     [0.93, 0.44, 0.64],
                     [0.80, 0.20, 0.52],
+                    [0.70, 0.10, 0.40],
                     [0.55, 0.05, 0.30],
+                    [0.45, 0.01, 0.20]
                 ]
             ),
             "finance_price": np.array([0.80, 0.20, 0.52]),
@@ -583,7 +585,7 @@ class Taud_taylor_OLG:
                 ax=ax,
                 tau_d_grid=tau_d_grid,
                 valid_tau=tau_sorted,
-                label=r"no unique eq.",
+                label=r"No unique eq.",
             )
 
             ax.fill_between(
@@ -617,7 +619,7 @@ class Taud_taylor_OLG:
             ax.set_xlabel(r"$\tau_d$")
             ax.set_ylabel(r"")
             ax.set_xlim(0.0, 1.0)
-            ax.set_ylim(0.0, 0.5)
+            ax.set_ylim(0.0, None)
             ax.grid(True, alpha=0.25)
             ax.legend(loc="upper right", frameon=True)
 
@@ -1233,7 +1235,7 @@ class Taud_taylor_OLG:
     def run(self):
         self.compute_tau_sweep()
         # self.plot_eps0_irfs(selected_tau_d=[0.085,0.026,0.004])
-        self.plot_eps0_irfs()
+        self.plot_eps0_irfs(selected_tau_d=[0.1,0.11,0.13,0.17,0.2])
         # self.plot_chis()
 
 
@@ -1241,15 +1243,15 @@ model = Taud_taylor_OLG()
 
 par = model.par
 par.beta  = 0.99**0.25
-par.omega = 0.865
+par.omega = 0.75
 par.tau_y = 1.0 / 3.0
 par.sigma = 1.0
-par.kappa = 0.0062
+par.kappa = 0.1
 par.Dbar  = 1.04
 par.psi   = 0.5 + 1.0 / par.beta 
-par.phi   = 0.5 - par.kappa / par.beta
+par.phi   = 0.5- par.kappa / par.beta
 par.tau_d = None
-par.T = 50
+par.T = 30
 
 
 model.run()

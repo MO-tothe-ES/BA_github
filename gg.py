@@ -1,3 +1,4 @@
+
 from types import SimpleNamespace
 from copy import deepcopy
 import numpy as np
@@ -24,7 +25,10 @@ def _maybe_show(show: bool = True):
 
 
 class PreannouncedDeficit_OLG_Original:
-    """Original model, kept only for the mu=0 nesting test."""
+    """
+    Original deterministic anticipated-deficit OLG-NK self-financing model.
+    Kept only for the mu=0 nesting tests.
+    """
 
     def __init__(self, verbose=True, eps0: float = 0.01):
         self.verbose = verbose
@@ -56,11 +60,6 @@ class PreannouncedDeficit_OLG_Original:
 
     def allocate(self):
         self.sol_all.results = []
-        self.sol_all.implement_t_list = []
-        self.sol_all.share_actual_list = []
-        self.sol_all.share_tax_base_list = []
-        self.sol_all.share_debt_erosion_list = []
-        self.sol_all.convergence_spread_list = []
 
     def model_coefficients(self):
         par = self.par
@@ -78,13 +77,12 @@ class PreannouncedDeficit_OLG_Original:
 
     def _deficit_path_from_announcement(self, announce_t: int, implement_t: int):
         par = self.par
-        T = par.T
         if implement_t < announce_t:
             raise ValueError("implement_t must be >= announce_t.")
         lag = implement_t - announce_t
-        n = T + 1
+        n = par.T + 1
         e = np.zeros(n)
-        if lag <= T:
+        if lag <= par.T:
             e[lag] = self.eps0
         S_e = np.zeros(n)
         for t in range(n):
@@ -99,8 +97,10 @@ class PreannouncedDeficit_OLG_Original:
             announce_t = par.announce_t
         if implement_t is None:
             implement_t = par.implement_t
+
         self.model_coefficients()
         e, S_e, lag = self._deficit_path_from_announcement(announce_t, implement_t)
+
         n = par.T + 1
         N = 5 * n
         offsets = {"y": 0, "pi": n, "d": 2 * n, "Sy": 3 * n, "Sr": 4 * n}
@@ -120,12 +120,14 @@ class PreannouncedDeficit_OLG_Original:
             A[row, idx("Sr", t)] = +(1.0 - par.beta * par.omega) * X_r
             b[row] = X_d * S_e[t]
             row += 1
+
         for t in range(n):
             A[row, idx("Sy", t)] = 1.0
             A[row, idx("y", t)] = -1.0
             if t < par.T:
                 A[row, idx("Sy", t + 1)] = -par.beta * par.omega
             row += 1
+
         for t in range(n):
             A[row, idx("Sr", t)] = 1.0
             A[row, idx("y", t)] = -par.alpha_y
@@ -133,12 +135,14 @@ class PreannouncedDeficit_OLG_Original:
             if t < par.T:
                 A[row, idx("Sr", t + 1)] = -par.beta * par.omega
             row += 1
+
         for t in range(n):
             A[row, idx("pi", t)] = 1.0
             A[row, idx("y", t)] = -par.kappa
             if t < par.T:
                 A[row, idx("pi", t + 1)] = -par.beta
             row += 1
+
         for t in range(par.T):
             A[row, idx("d", t + 1)] = 1.0
             A[row, idx("d", t)] = -(1.0 - par.tau_d) / par.beta
@@ -146,11 +150,14 @@ class PreannouncedDeficit_OLG_Original:
             A[row, idx("pi", t)] = -par.Dbar * par.alpha_pi
             b[row] = (1.0 - par.tau_d) / par.beta * e[t]
             row += 1
+
         A[row, idx("d", 0)] = 1.0
         A[row, idx("pi", 0)] = par.Dbar
         row += 1
+
         if row != N:
             raise RuntimeError(f"Equation count mismatch: row={row}, N={N}")
+
         eqsys.A = A
         eqsys.b = b
         eqsys.offsets = offsets
@@ -164,8 +171,10 @@ class PreannouncedDeficit_OLG_Original:
             announce_t = par.announce_t
         if implement_t is None:
             implement_t = par.implement_t
+
         self.build_system(announce_t=announce_t, implement_t=implement_t)
         x = np.linalg.solve(self.eqsys.A, self.eqsys.b)
+
         n = par.T + 1
         off = self.eqsys.offsets
         self.sol = SimpleNamespace()
@@ -178,12 +187,10 @@ class PreannouncedDeficit_OLG_Original:
         self.sol.Sy = x[off["Sy"]: off["Sy"] + n]
         self.sol.Sr = x[off["Sr"]: off["Sr"] + n]
         self.sol.r = par.alpha_y * self.sol.y + par.alpha_pi * self.sol.pi
-
         exp_pi_next = np.empty_like(self.sol.pi)
         exp_pi_next[:-1] = self.sol.pi[1:]
         exp_pi_next[-1] = 0.0
         self.sol.i_nom = self.sol.r + exp_pi_next
-
         self.sol.e = self.eqsys.e.copy()
         self.sol.S_e = self.eqsys.S_e.copy()
         self.sol.t = np.arange(n)
@@ -212,7 +219,18 @@ class PreannouncedDeficit_OLG_Original:
 
 
 class PreannouncedDeficit_OLG:
-    """OLG-NK model with a share mu of hand-to-mouth / spender households."""
+    """
+    Preannounced-deficit OLG-NK model with HtM share mu.
+
+    Important: before solving any announced path, the code checks the homogeneous
+    3x3 HtM RE system for BK determinacy using the matrix
+
+        E_t [d_{t+1}, y_{t+1}, pi_{t+1}]' = A_mu [d_t, y_t, pi_t]'
+
+    built from the reduced HtM DIS coefficients implied by the implemented model.
+    The path solver is only called when the matrix has exactly one stable and two
+    unstable roots.
+    """
 
     def __init__(self, verbose=True, eps0: float = 0.01):
         self.verbose = verbose
@@ -234,8 +252,12 @@ class PreannouncedDeficit_OLG:
         par.kappa = 0.0062
         par.Dbar = 1.04
         par.mu = 0.0
+
+        # These are the final real-rate-rule loadings:
+        # r_t = alpha_y * y_t + alpha_pi * pi_t
         par.alpha_y = 0.0
         par.alpha_pi = 0.0
+
         par.T = 500
         par.announce_t = 0
         par.implement_t = 8
@@ -251,32 +273,186 @@ class PreannouncedDeficit_OLG:
         self.sol_all.share_debt_erosion_list = []
         self.sol_all.convergence_spread_list = []
 
+    # ---------- primitive coefficients used by the implemented sequence-space solver ----------
     def model_coefficients(self):
         par = self.par
         eqsys = self.eqsys
+
         Delta = 1.0 - par.omega * (1.0 - par.tau_d)
         if abs(Delta) < 1e-14:
             raise ValueError("Denominator too close to zero.")
+
         eqsys.Delta = Delta
+
+        # Saver / OLG block used in the path solver
         eqsys.X_d_olg = (1.0 - par.beta * par.omega) * (1.0 - par.tau_d) * (1.0 - par.omega) / Delta
         eqsys.C_y_olg = (1.0 - par.beta * par.omega) * (1.0 - par.tau_y * (1.0 - par.omega) / Delta)
         eqsys.C_r_olg = (1.0 - par.beta * par.omega) * (
             par.sigma * par.beta * par.omega / (1.0 - par.beta * par.omega)
             - par.Dbar * par.beta * (1.0 - par.omega) / Delta
         )
+
+        # HtM current disposable-income block
         eqsys.mu_left = 1.0 - par.mu * (1.0 - par.tau_y)
         eqsys.mu_d = -par.mu * par.tau_d
         eqsys.mu_e0 = par.mu * (1.0 - par.tau_d)
 
+    # ---------- reduced HtM DIS coefficients for the homogeneous 3x3 matrix ----------
+    def reduced_htm_dis_coefficients(self, tau_d=None, mu=None):
+        """
+        Build the reduced homogeneous HtM DIS coefficients consistent with the
+        implemented sequence-space system.
+
+        Starting from the homogeneous AD row of the implemented solver:
+            mu_left * y_t = B_d d_t + B_y Sy_t - B_r Sr_t
+        with Sy_t = y_t + sum_{k>=1} (beta*omega)^k E_t[y_{t+k}],
+        we get
+            y_t = X_d^mu d_t + X_y^mu sum_{k>=1} ... y_{t+k} - X_r^mu sum_{k>=0} ... r_{t+k}.
+        """
+        par = self.par
+
+        tau_d_use = par.tau_d if tau_d is None else float(tau_d)
+        mu_use = par.mu if mu is None else float(mu)
+
+        beta, omega = par.beta, par.omega
+        tau_y, sigma, Dbar = par.tau_y, par.sigma, par.Dbar
+
+        Delta = 1.0 - omega * (1.0 - tau_d_use)
+        if abs(Delta) < 1e-14:
+            raise ValueError("Denominator too close to zero.")
+
+        X_d_olg = (1.0 - beta * omega) * (1.0 - tau_d_use) * (1.0 - omega) / Delta
+        C_y_olg = (1.0 - beta * omega) * (1.0 - tau_y * (1.0 - omega) / Delta)
+        C_r_olg = (1.0 - beta * omega) * (
+            sigma * beta * omega / (1.0 - beta * omega)
+            - Dbar * beta * (1.0 - omega) / Delta
+        )
+
+        mu_left = 1.0 - mu_use * (1.0 - tau_y)
+        B_d = -mu_use * tau_d_use + (1.0 - mu_use) * X_d_olg
+        B_y = (1.0 - mu_use) * C_y_olg
+        B_r = (1.0 - mu_use) * C_r_olg
+
+        reduced_denom = mu_left - B_y
+        if abs(reduced_denom) < 1e-14:
+            raise ValueError("Reduced HtM DIS denominator too close to zero.")
+
+        X_d_mu = B_d / reduced_denom
+        X_y_mu = B_y / reduced_denom
+        X_r_mu = B_r / reduced_denom
+
+        return {
+            "Delta": Delta,
+            "X_d_mu": float(X_d_mu),
+            "X_y_mu": float(X_y_mu),
+            "X_r_mu": float(X_r_mu),
+            "reduced_denom": float(reduced_denom),
+        }
+
+    def homogeneous_system_matrix(self, tau_d=None):
+        """
+        BK matrix from the user's 3x3 derivation, using the reduced HtM DIS coefficients.
+
+        The real-rate rule in this code is already:
+            r_t = alpha_y y_t + alpha_pi pi_t
+        so the matrix entries use alpha_y and alpha_pi directly.
+        """
+        par = self.par
+        tau_d_use = par.tau_d if tau_d is None else float(tau_d)
+
+        red = self.reduced_htm_dis_coefficients(tau_d=tau_d_use, mu=par.mu)
+
+        beta, omega = par.beta, par.omega
+        tau_y, kappa = par.tau_y, par.kappa
+        Dbar = par.Dbar
+        alpha_y, alpha_pi = par.alpha_y, par.alpha_pi
+
+        X_d_mu = red["X_d_mu"]
+        X_y_mu = red["X_y_mu"]
+        X_r_mu = red["X_r_mu"]
+
+        denom_y = beta * omega * (1.0 + X_y_mu)
+        if abs(denom_y) < 1e-14:
+            raise ValueError("AD-row denominator too close to zero.")
+
+        m_dd = (1.0 - tau_d_use) / beta
+        m_dy = Dbar * alpha_y - tau_y / beta
+        m_dpi = Dbar * alpha_pi
+
+        m_yd = -X_d_mu * (1.0 - omega * (1.0 - tau_d_use)) / denom_y
+        m_yy = (
+            1.0
+            - omega * X_d_mu * tau_y
+            + (beta * omega * X_d_mu * Dbar + X_r_mu) * alpha_y
+        ) / denom_y
+        m_ypi = (
+            (beta * omega * X_d_mu * Dbar + X_r_mu) * alpha_pi
+        ) / denom_y
+
+        A = np.array([
+            [m_dd, m_dy,  m_dpi],
+            [m_yd, m_yy,  m_ypi],
+            [0.0, -kappa / beta, 1.0 / beta],
+        ], dtype=float)
+
+        return A
+
+    def check_determinacy(self, tau_d=None, tol=1e-9):
+        tau_d_use = self.par.tau_d if tau_d is None else float(tau_d)
+
+        try:
+            A = self.homogeneous_system_matrix(tau_d=tau_d_use)
+            eigvals = np.linalg.eigvals(A)
+            mod = np.abs(eigvals)
+
+            n_stable = int(np.sum(mod < 1.0 - tol))
+            n_unstable = int(np.sum(mod > 1.0 + tol))
+            n_boundary = int(len(eigvals) - n_stable - n_unstable)
+
+            is_unique_bounded = (n_stable == 1 and n_unstable == 2 and n_boundary == 0)
+
+            return {
+                "tau_d": float(tau_d_use),
+                "A": A,
+                "eigvals": eigvals,
+                "n_stable": n_stable,
+                "n_unstable": n_unstable,
+                "n_boundary": n_boundary,
+                "is_unique_bounded": bool(is_unique_bounded),
+            }
+        except Exception as exc:
+            return {
+                "tau_d": float(tau_d_use),
+                "A": None,
+                "eigvals": np.array([]),
+                "n_stable": 0,
+                "n_unstable": 0,
+                "n_boundary": 3,
+                "is_unique_bounded": False,
+                "error": str(exc),
+            }
+
+    def _require_determinate(self, tau_d=None, tol=1e-9):
+        info = self.check_determinacy(tau_d=tau_d, tol=tol)
+        if not info["is_unique_bounded"]:
+            raise RuntimeError(
+                f"No unique bounded equilibrium from BK matrix for tau_d={info['tau_d']:.6f}. "
+                f"stable={info.get('n_stable', 'NA')}, "
+                f"unstable={info.get('n_unstable', 'NA')}, "
+                f"boundary={info.get('n_boundary', 'NA')}, "
+                f"eigvals={info.get('eigvals', [])}"
+            )
+        return info
+
+    # ---------- finite-horizon announced-shock path solver ----------
     def _deficit_path_from_announcement(self, announce_t: int, implement_t: int):
         par = self.par
-        T = par.T
         if implement_t < announce_t:
             raise ValueError("implement_t must be >= announce_t.")
         lag = implement_t - announce_t
-        n = T + 1
+        n = par.T + 1
         e = np.zeros(n)
-        if lag <= T:
+        if lag <= par.T:
             e[lag] = self.eps0
         S_e = np.zeros(n)
         for t in range(n):
@@ -291,8 +467,10 @@ class PreannouncedDeficit_OLG:
             announce_t = par.announce_t
         if implement_t is None:
             implement_t = par.implement_t
+
         self.model_coefficients()
         e, S_e, lag = self._deficit_path_from_announcement(announce_t, implement_t)
+
         n = par.T + 1
         N = 5 * n
         offsets = {"y": 0, "pi": n, "d": 2 * n, "Sy": 3 * n, "Sr": 4 * n}
@@ -311,12 +489,14 @@ class PreannouncedDeficit_OLG:
             A[row, idx("Sr", t)] = +(1.0 - par.mu) * eqsys.C_r_olg
             b[row] = eqsys.mu_e0 * e[t] + (1.0 - par.mu) * eqsys.X_d_olg * S_e[t]
             row += 1
+
         for t in range(n):
             A[row, idx("Sy", t)] = 1.0
             A[row, idx("y", t)] = -1.0
             if t < par.T:
                 A[row, idx("Sy", t + 1)] = -par.beta * par.omega
             row += 1
+
         for t in range(n):
             A[row, idx("Sr", t)] = 1.0
             A[row, idx("y", t)] = -par.alpha_y
@@ -324,12 +504,14 @@ class PreannouncedDeficit_OLG:
             if t < par.T:
                 A[row, idx("Sr", t + 1)] = -par.beta * par.omega
             row += 1
+
         for t in range(n):
             A[row, idx("pi", t)] = 1.0
             A[row, idx("y", t)] = -par.kappa
             if t < par.T:
                 A[row, idx("pi", t + 1)] = -par.beta
             row += 1
+
         for t in range(par.T):
             A[row, idx("d", t + 1)] = 1.0
             A[row, idx("d", t)] = -(1.0 - par.tau_d) / par.beta
@@ -337,11 +519,14 @@ class PreannouncedDeficit_OLG:
             A[row, idx("pi", t)] = -par.Dbar * par.alpha_pi
             b[row] = (1.0 - par.tau_d) / par.beta * e[t]
             row += 1
+
         A[row, idx("d", 0)] = 1.0
         A[row, idx("pi", 0)] = par.Dbar
         row += 1
+
         if row != N:
             raise RuntimeError(f"Equation count mismatch: row={row}, N={N}")
+
         eqsys.A = A
         eqsys.b = b
         eqsys.offsets = offsets
@@ -349,14 +534,19 @@ class PreannouncedDeficit_OLG:
         eqsys.S_e = S_e
         eqsys.lag = lag
 
-    def solve_model(self, announce_t=None, implement_t=None):
+    def solve_model(self, announce_t=None, implement_t=None, check_determinacy_first=True):
         par = self.par
         if announce_t is None:
             announce_t = par.announce_t
         if implement_t is None:
             implement_t = par.implement_t
+
+        if check_determinacy_first:
+            self._require_determinate(tau_d=par.tau_d)
+
         self.build_system(announce_t=announce_t, implement_t=implement_t)
         x = np.linalg.solve(self.eqsys.A, self.eqsys.b)
+
         n = par.T + 1
         off = self.eqsys.offsets
         self.sol = SimpleNamespace()
@@ -382,6 +572,7 @@ class PreannouncedDeficit_OLG:
         self.sol.debt_end[:-1] = self.sol.d[1:]
         self.sol.debt_end[-1] = np.nan
         self.sol.eps0 = self.eps0
+
         self.compute_financing_share()
         return self.sol
 
@@ -392,6 +583,7 @@ class PreannouncedDeficit_OLG:
         tax_base_gain = par.tau_y * np.sum((par.beta ** k) * sol.y)
         debt_erosion_gain = par.Dbar * sol.pi[0]
         servicing_cost = par.Dbar * np.sum((par.beta ** (k + 1)) * sol.r)
+
         sol.tax_base_gain = float(tax_base_gain)
         sol.debt_erosion_gain = float(debt_erosion_gain)
         sol.servicing_cost = float(servicing_cost)
@@ -406,10 +598,10 @@ class PreannouncedDeficit_OLG:
         shares = []
         for T in T_list:
             self.par.T = int(T)
-            self.solve_model(announce_t=announce_t, implement_t=implement_t)
+            self.solve_model(announce_t=announce_t, implement_t=implement_t, check_determinacy_first=True)
             shares.append(self.sol.share_actual)
         self.par.T = old_T
-        self.solve_model(announce_t=announce_t, implement_t=implement_t)
+        self.solve_model(announce_t=announce_t, implement_t=implement_t, check_determinacy_first=True)
         return {"T_list": list(T_list), "shares": shares, "spread": float(np.max(shares) - np.min(shares))}
 
     def solve_implement_sweep(self, announce_t=None, implement_t_grid=None, do_convergence_check=True):
@@ -418,9 +610,16 @@ class PreannouncedDeficit_OLG:
             announce_t = par.announce_t
         if implement_t_grid is None:
             implement_t_grid = np.arange(announce_t, par.lag_max + 1)
+
+        det = self.check_determinacy(tau_d=par.tau_d)
+        if not det["is_unique_bounded"]:
+            if self.verbose:
+                print(f"Skipping implement sweep: no unique bounded equilibrium for tau_d={par.tau_d:.6f}")
+            return
+
         self.allocate()
         for implement_t in implement_t_grid:
-            self.solve_model(announce_t=announce_t, implement_t=int(implement_t))
+            self.solve_model(announce_t=announce_t, implement_t=int(implement_t), check_determinacy_first=False)
             res = deepcopy(self.sol)
             if do_convergence_check:
                 conv = self.convergence_check(announce_t=announce_t, implement_t=int(implement_t))
@@ -434,13 +633,14 @@ class PreannouncedDeficit_OLG:
             self.sol_all.share_debt_erosion_list.append(res.share_debt_erosion)
             self.sol_all.convergence_spread_list.append(res.convergence_spread)
 
+    # ---------- plotting helpers ----------
     def style_colors(self):
         return {
             "line_list": np.array(
                 [
-                    [0.99, 0.85, 0.90],
+                    #[0.99, 0.85, 0.90],
                     [0.97, 0.67, 0.78],
-                    [0.93, 0.44, 0.64],
+                    #[0.93, 0.44, 0.64],
                     [0.80, 0.20, 0.52],
                     [0.55, 0.05, 0.30],
                 ]
@@ -454,9 +654,7 @@ class PreannouncedDeficit_OLG:
         if n <= len(base):
             return base[:n]
         idx = np.linspace(0, len(base) - 1, n)
-        return np.vstack([
-            np.interp(idx, np.arange(len(base)), base[:, c]) for c in range(3)
-        ]).T
+        return np.vstack([np.interp(idx, np.arange(len(base)), base[:, c]) for c in range(3)]).T
 
     def _sweep_total_share_given_tau(self, tau_d, announce_t=None, implement_t_grid=None):
         par = self.par
@@ -465,11 +663,16 @@ class PreannouncedDeficit_OLG:
             announce_t = par.announce_t
         if implement_t_grid is None:
             implement_t_grid = np.arange(announce_t, par.lag_max + 1)
+
+        det = self.check_determinacy(tau_d=tau_d)
+        if not det["is_unique_bounded"]:
+            return np.asarray(implement_t_grid, dtype=float), np.full(len(implement_t_grid), np.nan)
+
         vals = []
         try:
             par.tau_d = float(tau_d)
             for implement_t in implement_t_grid:
-                self.solve_model(announce_t=announce_t, implement_t=int(implement_t))
+                self.solve_model(announce_t=announce_t, implement_t=int(implement_t), check_determinacy_first=False)
                 vals.append(self.sol.share_actual)
         finally:
             par.tau_d = old_tau_d
@@ -484,25 +687,36 @@ class PreannouncedDeficit_OLG:
         if tau_d_grid is None:
             tau_d_grid = np.sort(np.concatenate((np.linspace(0.0, 1.0, 301), np.array([0.001, 0.026, 0.086]))))
         tau_d_grid = np.asarray(tau_d_grid, dtype=float)
+
         old_tau_d = par.tau_d
         valid_mask = np.zeros(len(tau_d_grid), dtype=bool)
         share_total = np.full(len(tau_d_grid), np.nan)
         share_tax = np.full(len(tau_d_grid), np.nan)
         share_price = np.full(len(tau_d_grid), np.nan)
+
         try:
             for i, tau_d in enumerate(tau_d_grid):
-                try:
-                    par.tau_d = float(tau_d)
-                    self.solve_model(announce_t=announce_t, implement_t=implement_t)
-                    share_total[i] = self.sol.share_actual
-                    share_tax[i] = self.sol.share_tax_base
-                    share_price[i] = self.sol.share_debt_erosion
-                    valid_mask[i] = np.isfinite(self.sol.share_actual)
-                except Exception:
+                det = self.check_determinacy(tau_d=tau_d)
+                if not det["is_unique_bounded"]:
                     valid_mask[i] = False
+                    continue
+
+                par.tau_d = float(tau_d)
+                self.solve_model(announce_t=announce_t, implement_t=implement_t, check_determinacy_first=False)
+                share_total[i] = self.sol.share_actual
+                share_tax[i] = self.sol.share_tax_base
+                share_price[i] = self.sol.share_debt_erosion
+                valid_mask[i] = np.isfinite(self.sol.share_actual)
         finally:
             par.tau_d = old_tau_d
-        return {"tau_d_grid": tau_d_grid, "valid_mask": valid_mask, "share_total": share_total, "share_tax": share_tax, "share_price": share_price}
+
+        return {
+            "tau_d_grid": tau_d_grid,
+            "valid_mask": valid_mask,
+            "share_total": share_total,
+            "share_tax": share_tax,
+            "share_price": share_price,
+        }
 
     def _shade_invalid_tau_regions(self, ax, tau_d_grid, valid_mask, label=None):
         tau_d_grid = np.asarray(tau_d_grid, dtype=float)
@@ -518,6 +732,7 @@ class PreannouncedDeficit_OLG:
             ax.axvspan(x0, x1, facecolor="grey", alpha=0.55, zorder=0, label=label if first_patch else None)
             first_patch = False
 
+    # ---------- plotting ----------
     def plot_self_financing_vs_tau(
         self,
         announce_t=None,
@@ -536,12 +751,14 @@ class PreannouncedDeficit_OLG:
             implement_t = par.implement_t
         if selected_tau_d is None:
             selected_tau_d = [0.001, 0.026, 0.086]
+
         out = self._compute_self_financing_curve_tau(announce_t=announce_t, implement_t=implement_t, tau_d_grid=tau_d_grid)
         tau = out["tau_d_grid"]
         valid = out["valid_mask"]
         nu_total = out["share_total"]
         nu_price = out["share_price"]
         line_colors = self._get_line_colors(len(selected_tau_d))
+
         with mpl.rc_context({
             "font.family": "Times New Roman",
             "font.size": 13,
@@ -553,32 +770,38 @@ class PreannouncedDeficit_OLG:
             "mathtext.fontset": "stix",
         }):
             fig, ax = plt.subplots(figsize=figsize)
-            self._shade_invalid_tau_regions(ax=ax, tau_d_grid=tau, valid_mask=valid, label="No valid solve")
+            self._shade_invalid_tau_regions(ax=ax, tau_d_grid=tau, valid_mask=valid, label="No unique bounded eq.")
             tau_valid = tau[valid]
             nu_price_valid = nu_price[valid]
             nu_total_valid = nu_total[valid]
+
             if tau_valid.size > 0:
                 ax.fill_between(tau_valid, 0.0, nu_price_valid, color=colors["finance_price"], alpha=0.95, label="Date-0 Inflation", zorder=2)
                 ax.fill_between(tau_valid, nu_price_valid, nu_total_valid, color=colors["finance_tax"], alpha=0.95, label="Tax Base", zorder=3)
                 ax.plot(tau_valid, nu_total_valid, color="black", lw=1.4, alpha=0.7, zorder=4)
+
             for color, tau0 in zip(line_colors, selected_tau_d):
                 idx = np.argmin(np.abs(tau - tau0))
                 if valid[idx]:
                     ax.scatter(tau[idx], nu_total[idx], s=55, color=color, edgecolor="black", linewidth=0.8, zorder=5)
+
             ax.set_title(rf"Self-financing share $\nu$ at horizon $s={implement_t}$")
             ax.set_xlabel(r"$\tau_d$")
             ax.set_xlim(0.0, 1.0)
             ax.grid(True, alpha=0.25)
+
             legend_handles = [
                 Patch(facecolor=colors["finance_price"], edgecolor="none", label="Date-0 Inflation"),
                 Patch(facecolor=colors["finance_tax"], edgecolor="none", label="Tax Base"),
-                Patch(facecolor="grey", alpha=0.55, edgecolor="none", label="No valid solve"),
+                Patch(facecolor="grey", alpha=0.55, edgecolor="none", label="No unique bounded eq."),
             ]
             ax.legend(handles=legend_handles, loc="upper right", frameon=True)
+
             if savepath is not None:
                 fig.savefig(savepath, dpi=200, bbox_inches="tight")
                 if self.verbose:
                     print(f"saved to: {savepath}")
+
             _maybe_show(show)
             plt.close(fig)
 
@@ -596,6 +819,7 @@ class PreannouncedDeficit_OLG:
     ):
         par = self.par
         colors = self.style_colors()
+
         if announce_t is None:
             announce_t = par.announce_t
         if implement_t is None:
@@ -608,19 +832,38 @@ class PreannouncedDeficit_OLG:
             x_plot_max = par.x_plot_max
         if tau_d_grid is None:
             tau_d_grid = np.sort(np.concatenate((np.linspace(0.0, 1.0, 301), np.array(tau_d_list))))
+
         old_T = par.T
         old_tau_d = par.tau_d
+
         try:
             par.T = int(truncation_T)
             line_colors = self._get_line_colors(len(tau_d_list))
+
             selected_results = []
-            for tau_d in tau_d_list:
+            selected_colors = []
+            missing_tau = []
+
+            for color, tau_d in zip(line_colors, tau_d_list):
+                det = self.check_determinacy(tau_d=tau_d)
+                if not det["is_unique_bounded"]:
+                    missing_tau.append(float(tau_d))
+                    continue
                 par.tau_d = float(tau_d)
-                self.solve_model(announce_t=announce_t, implement_t=implement_t)
+                self.solve_model(announce_t=announce_t, implement_t=implement_t, check_determinacy_first=False)
                 res = deepcopy(self.sol)
                 res.tau_d = float(tau_d)
                 selected_results.append(res)
+                selected_colors.append(color)
+
+            if len(selected_results) == 0:
+                raise RuntimeError("None of the requested tau_d values has a unique bounded equilibrium.")
+
+            if missing_tau and self.verbose:
+                print(f"Skipping undetermined tau_d values in IRF plot: {missing_tau}")
+
             sf = self._compute_self_financing_curve_tau(announce_t=announce_t, implement_t=implement_t, tau_d_grid=tau_d_grid)
+
             with mpl.rc_context({
                 "font.family": "Times New Roman",
                 "font.size": 13,
@@ -633,8 +876,9 @@ class PreannouncedDeficit_OLG:
             }):
                 fig, axes = plt.subplots(2, 2, figsize=(10, 8), sharex=False, constrained_layout=False)
                 fig.subplots_adjust(left=0.10, right=0.85, top=0.92, bottom=0.12, wspace=0.36, hspace=0.34)
+
                 ax = axes[0, 0]
-                for color, res in zip(line_colors, selected_results):
+                for color, res in zip(selected_colors, selected_results):
                     ax.plot(res.t, res.y, lw=2.8, color=color)
                 ax.axvline(implement_t, color="black", ls="--", alpha=0.8, linewidth=1.2)
                 ax.set_title(r"Output $y_t$")
@@ -644,9 +888,8 @@ class PreannouncedDeficit_OLG:
                 ax.grid(True, alpha=0.25)
 
                 ax = axes[0, 1]
-                for color, res in zip(line_colors, selected_results):
-                    debt_to_plot = res.debt_end if hasattr(res, "debt_end") else np.r_[res.d[1:], np.nan]
-                    ax.plot(res.t, debt_to_plot, lw=2.8, color=color)
+                for color, res in zip(selected_colors, selected_results):
+                    ax.plot(res.t, res.debt_end, lw=2.8, color=color)
                 ax.axvline(implement_t, color="black", ls="--", alpha=0.8, linewidth=1.2)
                 ax.set_title(r"Public debt $d_{t+1}$")
                 ax.set_xlabel(r"$t$")
@@ -655,10 +898,10 @@ class PreannouncedDeficit_OLG:
 
                 ax = axes[1, 0]
                 ax_r = ax.twinx()
-                for color, res in zip(line_colors, selected_results):
-                    ax.plot(res.t, res.pi,    lw=2.5, color=color, ls="--")
+                for color, res in zip(selected_colors, selected_results):
+                    ax.plot(res.t, res.pi, lw=2.5, color=color, ls="--")
                     ax.plot(res.t, res.i_nom, lw=2.5, color=color, ls=":")
-                    ax_r.plot(res.t, res.r,   lw=2.5, color=color, ls="-")
+                    ax_r.plot(res.t, res.r, lw=2.5, color=color, ls="-")
                 ax.axvline(implement_t, color="black", ls="--", alpha=0.8, linewidth=1.2)
                 ax.set_title(r"Inflation and interest rates")
                 ax.set_xlabel(r"$t$")
@@ -668,32 +911,36 @@ class PreannouncedDeficit_OLG:
                 ax.grid(True, alpha=0.25)
                 style_handles = [
                     Line2D([0], [0], color="black", lw=2.5, ls="--", label=r"$\pi_t$"),
-                    Line2D([0], [0], color="black", lw=2.5, ls=":",  label=r"$i_t$"),
-                    Line2D([0], [0], color="black", lw=2.5, ls="-",  label=r"$r_t$"),
+                    Line2D([0], [0], color="black", lw=2.5, ls=":", label=r"$i_t$"),
+                    Line2D([0], [0], color="black", lw=2.5, ls="-", label=r"$r_t$"),
                 ]
                 ax.legend(handles=style_handles, loc="upper right", frameon=True)
 
                 ax = axes[1, 1]
-                self._shade_invalid_tau_regions(ax=ax, tau_d_grid=sf["tau_d_grid"], valid_mask=sf["valid_mask"], label="No valid solve")
+                self._shade_invalid_tau_regions(ax=ax, tau_d_grid=sf["tau_d_grid"], valid_mask=sf["valid_mask"], label="No unique bounded eq.")
                 tau_valid = sf["tau_d_grid"][sf["valid_mask"]]
                 nu_price_valid = sf["share_price"][sf["valid_mask"]]
                 nu_total_valid = sf["share_total"][sf["valid_mask"]]
+
                 if tau_valid.size > 0:
                     ax.fill_between(tau_valid, 0.0, nu_price_valid, color=colors["finance_price"], alpha=0.95, label="Date-0 Inflation", zorder=2)
                     ax.fill_between(tau_valid, nu_price_valid, nu_total_valid, color=colors["finance_tax"], alpha=0.95, label="Tax Base", zorder=3)
                     ax.plot(tau_valid, nu_total_valid, color="black", lw=1.4, alpha=0.7, zorder=4)
-                for color, tau0 in zip(line_colors, tau_d_list):
+
+                for color, tau0 in zip(selected_colors, [r.tau_d for r in selected_results]):
                     idx = np.argmin(np.abs(sf["tau_d_grid"] - tau0))
                     if sf["valid_mask"][idx]:
                         ax.scatter(sf["tau_d_grid"][idx], sf["share_total"][idx], s=55, color=color, edgecolor="black", linewidth=0.8, zorder=5)
+
                 ax.set_title(r"Self-financing share $\nu$")
                 ax.set_xlabel(r"$\tau_d$")
                 ax.set_xlim(0.0, 1.0)
                 ax.grid(True, alpha=0.25)
+
                 legend_handles = [
                     Patch(facecolor=colors["finance_price"], edgecolor="none", label="Date-0 Inflation"),
                     Patch(facecolor=colors["finance_tax"], edgecolor="none", label="Tax Base"),
-                    Patch(facecolor="grey", alpha=0.55, edgecolor="none", label="No valid solve"),
+                    Patch(facecolor="grey", alpha=0.55, edgecolor="none", label="No unique bounded eq."),
                 ]
                 ax.legend(handles=legend_handles, loc="upper right", frameon=True)
 
@@ -701,18 +948,25 @@ class PreannouncedDeficit_OLG:
                     for ax0 in [axes[0, 0], axes[0, 1], axes[1, 1]]:
                         ymin, ymax = ax0.get_ylim()
                         ax0.set_ylim(0.0, ymax)
+
                 tmax = min(int(x_plot_max), int(selected_results[0].t[-1]))
                 xticks = np.arange(0, tmax + 1, 10)
                 for ax0 in [axes[0, 0], axes[0, 1], axes[1, 0]]:
                     ax0.set_xticks(xticks)
                     ax0.tick_params(axis="x", labelbottom=True)
-                tau_handles = [Line2D([0], [0], color=color, lw=2.8, label=rf"{res.tau_d:.3f}") for color, res in zip(line_colors, selected_results)]
+
+                tau_handles = [
+                    Line2D([0], [0], color=color, lw=2.8, label=rf"{res.tau_d:.3f}")
+                    for color, res in zip(selected_colors, selected_results)
+                ]
                 fig.legend(handles=tau_handles, loc="center left", bbox_to_anchor=(0.88, 0.50), frameon=True, title=r"$\tau_d$", borderaxespad=0.0)
                 fig.align_ylabels([axes[0, 0], axes[1, 0]])
+
                 if savepath is not None:
                     fig.savefig(savepath, dpi=200, bbox_inches="tight")
                     if self.verbose:
                         print(f"saved to: {savepath}")
+
                 _maybe_show(show)
                 plt.close(fig)
         finally:
@@ -729,7 +983,6 @@ class PreannouncedDeficit_OLG:
         savepath=None,
         show=True,
     ):
-        """Standalone implementation-delay figure in the same style as the reference code."""
         par = self.par
         if announce_t is None:
             announce_t = par.announce_t
@@ -759,13 +1012,23 @@ class PreannouncedDeficit_OLG:
             }):
                 fig, ax = plt.subplots(figsize=figsize)
 
+                plotted = []
                 for color, tau_d in zip(line_colors, tau_d_list):
+                    det = self.check_determinacy(tau_d=tau_d)
+                    if not det["is_unique_bounded"]:
+                        if self.verbose:
+                            print(f"Skipping tau_d={tau_d:.6f} in delay sweep: no unique bounded equilibrium.")
+                        continue
                     s_grid, nu_grid = self._sweep_total_share_given_tau(
                         tau_d=float(tau_d),
                         announce_t=announce_t,
                         implement_t_grid=implement_t_grid,
                     )
                     ax.plot(s_grid, nu_grid, lw=2.8, color=color)
+                    plotted.append((color, tau_d))
+
+                if len(plotted) == 0:
+                    raise RuntimeError("No determinate tau_d values available for implementation-delay sweep.")
 
                 ax.axhline(1.0, color="black", ls="--", alpha=0.5, linewidth=1.2)
                 ax.set_title(r"Self-financing share $\nu(s)$")
@@ -776,7 +1039,7 @@ class PreannouncedDeficit_OLG:
 
                 tau_handles = [
                     Line2D([0], [0], color=color, lw=2.8, label=rf"$\tau_d={tau:.3f}$")
-                    for color, tau in zip(line_colors, tau_d_list)
+                    for color, tau in plotted
                 ]
                 ax.legend(handles=tau_handles, loc="best", frameon=True)
 
@@ -787,11 +1050,11 @@ class PreannouncedDeficit_OLG:
 
                 _maybe_show(show)
                 plt.close(fig)
-
         finally:
             par.T = old_T
             par.tau_d = old_tau_d
 
+    # ---------- diagnostics ----------
     def summary(self, announce_t=None, implement_t=None, truncation_T=None):
         par = self.par
         if announce_t is None:
@@ -800,18 +1063,27 @@ class PreannouncedDeficit_OLG:
             implement_t = par.implement_t
         if truncation_T is None:
             truncation_T = par.T
+
+        det = self.check_determinacy(tau_d=par.tau_d)
+        print("--- Preannounced-deficit OLG model with HtM share ---")
+        print(f"announcement date: {announce_t}")
+        print(f"implementation date: {implement_t}")
+        print(f"lag: {implement_t - announce_t}")
+        print(f"shock size eps0: {self.eps0:.6f}")
+        print(f"mu: {par.mu:.6f}")
+        print(f"tau_d: {par.tau_d:.6f}")
+        print(f"determinacy: {det['is_unique_bounded']} (stable={det['n_stable']}, unstable={det['n_unstable']}, boundary={det['n_boundary']})")
+        print(f"BK eigenvalues: {np.array2string(det['eigvals'], precision=6)}")
+
+        if not det["is_unique_bounded"]:
+            print("Path not solved because the homogeneous HtM system is not uniquely bounded.")
+            return
+
         old_T = par.T
         try:
             par.T = int(truncation_T)
-            self.solve_model(announce_t=announce_t, implement_t=implement_t)
+            self.solve_model(announce_t=announce_t, implement_t=implement_t, check_determinacy_first=False)
             conv = self.convergence_check(announce_t=announce_t, implement_t=implement_t)
-            print("--- Preannounced-deficit OLG model with HtM share ---")
-            print(f"announcement date: {announce_t}")
-            print(f"implementation date: {implement_t}")
-            print(f"lag: {implement_t - announce_t}")
-            print(f"shock size eps0: {self.eps0:.6f}")
-            print(f"mu: {par.mu:.6f}")
-            print(f"tau_d (baseline paths): {par.tau_d:.6f}")
             print(f"calculation horizon T: {par.T}")
             print(f"share financed:       {self.sol.share_actual:.8f}")
             print(f"  tax-base share:     {self.sol.share_tax_base:.8f}")
@@ -820,6 +1092,19 @@ class PreannouncedDeficit_OLG:
             print(f"convergence spread:   {conv['spread']:.3e}")
         finally:
             par.T = old_T
+
+    def determinacy_table(self, tau_d_list, tol=1e-9):
+        rows = []
+        for tau_d in tau_d_list:
+            det = self.check_determinacy(tau_d=tau_d, tol=tol)
+            rows.append({
+                "tau_d": float(tau_d),
+                "unique_bounded": det["is_unique_bounded"],
+                "stable": det["n_stable"],
+                "unstable": det["n_unstable"],
+                "boundary": det["n_boundary"],
+            })
+        return rows
 
     def run(
         self,
@@ -851,91 +1136,92 @@ class PreannouncedDeficit_OLG:
 
 def quick_self_test():
     print("\n--- quick self test ---")
-    T_test = 120
-    impl_test = 25
-    old = PreannouncedDeficit_OLG_Original(verbose=False, eps0=0.01)
-    new = PreannouncedDeficit_OLG(verbose=False, eps0=0.01)
-    for mdl in (old, new):
-        mdl.par.beta = 0.998
-        mdl.par.omega = 0.865
-        mdl.par.sigma = 1.0
-        mdl.par.tau_y = 1.0 / 3.0
-        mdl.par.tau_d = 0.026
-        mdl.par.kappa = 0.0062
-        mdl.par.Dbar = 1.04
-        mdl.par.alpha_y = 0.0
-        mdl.par.alpha_pi = 0.0
-        mdl.par.T = T_test
-        mdl.par.announce_t = 0
-        mdl.par.implement_t = impl_test
-    new.par.mu = 0.0
-    old.solve_model()
-    new.solve_model()
-    print("mu = 0 nesting test:")
-    print(f"  max |y_old - y_new|   = {np.max(np.abs(old.sol.y  - new.sol.y )):.3e}")
-    print(f"  max |pi_old - pi_new| = {np.max(np.abs(old.sol.pi - new.sol.pi)):.3e}")
-    print(f"  max |d_old - d_new|   = {np.max(np.abs(old.sol.d  - new.sol.d )):.3e}")
-    print("\npreannounced transfer, implementation at t=25:")
-    for mu in [0.0, 0.2, 0.5]:
-        m = PreannouncedDeficit_OLG(verbose=False, eps0=0.01)
-        p = m.par
-        p.mu = mu
-        p.beta = 0.998
-        p.omega = 0.865
-        p.sigma = 1.0
-        p.tau_y = 1.0 / 3.0
-        p.tau_d = 0.026
-        p.kappa = 0.0062
-        p.Dbar = 1.04
-        p.alpha_y = 0.0
-        p.alpha_pi = 0.0
-        p.T = T_test
-        p.announce_t = 0
-        p.implement_t = 25
-        m.solve_model()
-        print(f"  mu={mu:.1f} | y0={m.sol.y[0]: .8f} | y25={m.sol.y[25]: .8f} | nu={m.sol.share_actual: .8f}")
-    print("\nsurprise transfer, implementation at t=0:")
-    for mu in [0.0, 0.2, 0.5]:
-        m = PreannouncedDeficit_OLG(verbose=False, eps0=0.01)
-        p = m.par
-        p.mu = mu
-        p.beta = 0.998
-        p.omega = 0.865
-        p.sigma = 1.0
-        p.tau_y = 1.0 / 3.0
-        p.tau_d = 0.026
-        p.kappa = 0.0062
-        p.Dbar = 1.04
-        p.alpha_y = 0.0
-        p.alpha_pi = 0.0
-        p.T = T_test
-        p.announce_t = 0
-        p.implement_t = 0
-        m.solve_model()
-        print(f"  mu={mu:.1f} | y0={m.sol.y[0]: .8f} | nu={m.sol.share_actual: .8f}")
-    print("\nself-financing curve test:")
-    m = PreannouncedDeficit_OLG(verbose=False, eps0=0.01)
+
+    # Test 1: mu=0 nesting across multiple delays and tau_d values
+    delays = [0, 1, 5, 20, 40]
+    tau_list = [0.0, 0.026, 0.086]
+
+    print("multi-delay mu=0 nesting test:")
+    for tau_d in tau_list:
+        maxdiff_y = 0.0
+        maxdiff_pi = 0.0
+        maxdiff_d = 0.0
+        maxdiff_nu = 0.0
+
+        for implement_t in delays:
+            old = PreannouncedDeficit_OLG_Original(verbose=False, eps0=0.01)
+            new = PreannouncedDeficit_OLG(verbose=False, eps0=0.01)
+
+            for mdl in (old, new):
+                mdl.par.beta = 0.998
+                mdl.par.omega = 0.865
+                mdl.par.sigma = 1.0
+                mdl.par.tau_y = 1.0 / 3.0
+                mdl.par.tau_d = tau_d
+                mdl.par.kappa = 0.0062
+                mdl.par.Dbar = 1.04
+                mdl.par.alpha_y = 0.0
+                mdl.par.alpha_pi = 0.0
+                mdl.par.T = 120
+                mdl.par.announce_t = 0
+                mdl.par.implement_t = implement_t
+
+            new.par.mu = 0.0
+            det = new.check_determinacy(tau_d=tau_d)
+            if not det["is_unique_bounded"]:
+                print(f"  tau_d={tau_d:.3f}: skipped nesting check because BK not unique.")
+                continue
+
+            old.solve_model()
+            new.solve_model(check_determinacy_first=False)
+
+            maxdiff_y = max(maxdiff_y, float(np.max(np.abs(old.sol.y - new.sol.y))))
+            maxdiff_pi = max(maxdiff_pi, float(np.max(np.abs(old.sol.pi - new.sol.pi))))
+            maxdiff_d = max(maxdiff_d, float(np.max(np.abs(old.sol.d - new.sol.d))))
+            maxdiff_nu = max(maxdiff_nu, abs(old.sol.share_actual - new.sol.share_actual))
+
+        print(
+            f"  tau_d={tau_d:.3f} | "
+            f"max|dy|={maxdiff_y:.3e}, "
+            f"max|dpi|={maxdiff_pi:.3e}, "
+            f"max|dd|={maxdiff_d:.3e}, "
+            f"max|dnu|={maxdiff_nu:.3e}"
+        )
+
+    # Test 2: active-rule determinacy table
+    print("\nactive-rule determinacy table:")
+    m = PreannouncedDeficit_OLG(verbose=False, eps0=1.0)
     p = m.par
-    p.mu = 0.073
+    p.mu = 0.0
     p.beta = 0.99**0.25
     p.omega = 0.865
     p.sigma = 1.0
     p.tau_y = 1.0 / 3.0
-    p.tau_d = 0.026
     p.kappa = 0.0062
     p.Dbar = 1.04
-    p.alpha_y = 0.0
-    p.alpha_pi = 0.0
+    p.alpha_y = 0.5
+    p.alpha_pi = 0.5
+    for row in m.determinacy_table([0.0, 0.1, 0.3, 0.5, 1.0]):
+        print(" ", row)
+
+    # Test 3: self-financing sweep should mark invalid tau before solving
+    print("\nself-financing curve smoke test:")
+    p.tau_d = 0.026
     p.T = 180
     p.announce_t = 0
-    p.implement_t = 0
-    sf = m._compute_self_financing_curve_tau(announce_t=0, implement_t=0, tau_d_grid=np.array([0.001, 0.026, 0.086]))
+    p.implement_t = 20
+    sf = m._compute_self_financing_curve_tau(
+        announce_t=0,
+        implement_t=20,
+        tau_d_grid=np.array([0.0, 0.1, 0.3, 0.5, 1.0]),
+    )
     print("  valid_mask =", sf["valid_mask"])
     print("  total_nu   =", np.round(sf["share_total"], 6))
 
 
 if __name__ == "__main__":
     quick_self_test()
+
     model = PreannouncedDeficit_OLG(verbose=True, eps0=1.00)
     par = model.par
     par.mu = 0.073
@@ -950,14 +1236,21 @@ if __name__ == "__main__":
     par.alpha_pi = 0.5
     par.T = 500
     par.announce_t = 0
-    par.implement_t = 20
+    par.implement_t = 0
     par.x_plot_max = 30
     par.horizon_x_max = 40
+
     model.run(
-        truncation_T=500,
-        x_plot_max=50,
-        tau_d_list=[0.0, 0.1,0.3,0.5,1.0],
-        savepath_main="preannounced_deficit_multi_tau_controls_mu_active.png",
-        savepath_delay="preannounced_delay_sweep_mu_active.png",
+        truncation_T=600,
+        x_plot_max=30,
+        tau_d_list=[0.004,0.026,0.085],
+        savepath_main="preannounced_deficit_multi_tau_controls_mu_active_checked.png",
+        savepath_delay="preannounced_delay_sweep_mu_active_checked.png",
     )
-    model.plot_self_financing_vs_tau(announce_t=0, implement_t=0, selected_tau_d=[0.0, 0.001, 0.026, 0.086,0.1], savepath="preannounced_self_financing_vs_tau_mu_active.png")
+
+    model.plot_self_financing_vs_tau(
+        announce_t=0,
+        implement_t=20,
+        selected_tau_d=[0.0, 0.1, 0.3, 0.5, 1.0],
+        savepath="preannounced_self_financing_vs_tau_mu_active_checked.png",
+    )
