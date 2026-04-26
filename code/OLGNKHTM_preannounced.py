@@ -27,10 +27,6 @@ class PreannouncedDeficit_OLG_Original:
     """
     Original deterministic anticipated-deficit OLG-NK self-financing model.
     Kept only for the mu=0 nesting tests.
-
-    IMPORTANT:
-    This class has the corrected self-financing definition with variable real rates:
-        denominator = PV deficit + PV debt-servicing cost.
     """
 
     def __init__(self, verbose=True, eps0: float = 0.01):
@@ -87,6 +83,7 @@ class PreannouncedDeficit_OLG_Original:
 
     def _deficit_path_from_announcement(self, announce_t: int, implement_t: int):
         par = self.par
+
         if implement_t < announce_t:
             raise ValueError("implement_t must be >= announce_t.")
 
@@ -129,7 +126,6 @@ class PreannouncedDeficit_OLG_Original:
 
         X_d, X_y, X_r = eqsys.X_d, eqsys.X_y, eqsys.X_r
 
-        # Aggregate demand
         for t in range(n):
             A[row, idx("y", t)] = 1.0
             A[row, idx("d", t)] = -X_d
@@ -138,7 +134,6 @@ class PreannouncedDeficit_OLG_Original:
             b[row] = X_d * S_e[t]
             row += 1
 
-        # Sy recursion
         for t in range(n):
             A[row, idx("Sy", t)] = 1.0
             A[row, idx("y", t)] = -1.0
@@ -146,7 +141,6 @@ class PreannouncedDeficit_OLG_Original:
                 A[row, idx("Sy", t + 1)] = -par.beta * par.omega
             row += 1
 
-        # Sr recursion
         for t in range(n):
             A[row, idx("Sr", t)] = 1.0
             A[row, idx("y", t)] = -par.alpha_y
@@ -155,7 +149,6 @@ class PreannouncedDeficit_OLG_Original:
                 A[row, idx("Sr", t + 1)] = -par.beta * par.omega
             row += 1
 
-        # NKPC
         for t in range(n):
             A[row, idx("pi", t)] = 1.0
             A[row, idx("y", t)] = -par.kappa
@@ -163,7 +156,6 @@ class PreannouncedDeficit_OLG_Original:
                 A[row, idx("pi", t + 1)] = -par.beta
             row += 1
 
-        # Debt law of motion
         for t in range(par.T):
             A[row, idx("d", t + 1)] = 1.0
             A[row, idx("d", t)] = -(1.0 - par.tau_d) / par.beta
@@ -172,7 +164,6 @@ class PreannouncedDeficit_OLG_Original:
             b[row] = (1.0 - par.tau_d) / par.beta * e[t]
             row += 1
 
-        # Initial debt condition: d_0 = -Dbar*pi_0
         A[row, idx("d", 0)] = 1.0
         A[row, idx("pi", 0)] = par.Dbar
         row += 1
@@ -227,21 +218,13 @@ class PreannouncedDeficit_OLG_Original:
         self.sol.debt_end[:-1] = self.sol.d[1:]
         self.sol.debt_end[-1] = np.nan
 
-        # FIX: code-2 q_t corresponds to d_t + e_t, not d_t alone.
         self.sol.q = self.sol.d + self.sol.e
-
         self.sol.eps0 = self.eps0
 
         self.compute_financing_share()
         return self.sol
 
     def compute_financing_share(self):
-        """
-        FIX:
-        With variable real rates, the self-financing denominator is not eps0.
-        It is:
-            PV deficit + PV debt-servicing costs.
-        """
         par = self.par
         sol = self.sol
         k = np.arange(len(sol.y))
@@ -270,26 +253,16 @@ class PreannouncedDeficit_OLG_Original:
         sol.fiscal_adjustment = float(fiscal_adjustment)
         sol.residual_need = float(fiscal_adjustment / denom)
 
-        # Useful numerical check of the intertemporal government budget identity
         sol.budget_identity_error = float(
             denom - fiscal_adjustment - tax_base_gain - debt_erosion_gain
         )
 
-        # Old normalization kept only as a diagnostic
         sol.share_actual_over_eps0 = float((tax_base_gain + debt_erosion_gain) / self.eps0)
 
 
 class PreannouncedDeficit_OLG:
     """
     Preannounced-deficit OLG-NK model with HtM share mu.
-
-    Corrected version:
-    1. mu=0 nests the original OLG model.
-    2. Self-financing share uses the correct denominator:
-           PV deficit + debt-servicing costs.
-    3. The HtM extension corrects the debt-loading term:
-           savers hold all public debt, so the direct debt-wealth effect
-           is not simply multiplied by (1-mu).
     """
 
     def __init__(self, verbose=True, eps0: float = 0.01):
@@ -313,11 +286,8 @@ class PreannouncedDeficit_OLG:
         par.kappa = 0.0062
         par.Dbar = 1.04
 
-        # HtM share
         par.mu = 0.0
 
-        # Final real-rate rule:
-        # r_t = alpha_y*y_t + alpha_pi*pi_t
         par.alpha_y = 0.0
         par.alpha_pi = 0.0
 
@@ -351,17 +321,18 @@ class PreannouncedDeficit_OLG:
 
         eqsys.Delta = Delta
 
-        # OLG/saver block
         eqsys.X_d_olg = (
             (1.0 - beta * omega)
             * (1.0 - tau_d)
             * (1.0 - omega)
             / Delta
         )
+
         eqsys.C_y_olg = (
             (1.0 - beta * omega)
             * (1.0 - tau_y * (1.0 - omega) / Delta)
         )
+
         eqsys.C_r_olg = (
             (1.0 - beta * omega)
             * (
@@ -370,18 +341,9 @@ class PreannouncedDeficit_OLG:
             )
         )
 
-        # HtM current disposable-income block
         eqsys.mu_left = 1.0 - mu * (1.0 - tau_y)
 
-        # FIX:
-        # Correct aggregate debt coefficient with HtM consumers.
-        # Since savers hold all public debt, the direct wealth effect is not
-        # simply scaled by (1-mu). The missing term in the old code was:
-        #     + mu*(1-beta*omega)
-        #
-        # HtM current disposable income contributes -mu*tau_d*d_t.
-        # Savers contribute:
-        #     (1-mu)*X_d_olg plus the correction from higher per-saver debt holdings.
+        # Correct HtM debt loading: savers hold all public debt.
         eqsys.B_d = (
             (1.0 - mu) * eqsys.X_d_olg
             + mu * ((1.0 - beta * omega) - tau_d)
@@ -390,16 +352,10 @@ class PreannouncedDeficit_OLG:
         eqsys.B_y = (1.0 - mu) * eqsys.C_y_olg
         eqsys.B_r = (1.0 - mu) * eqsys.C_r_olg
 
-        # Current implemented transfer effect for HtM households
         eqsys.B_e_current = mu * (1.0 - tau_d)
-
-        # Announcement/news effect for savers
         eqsys.B_e_news = (1.0 - mu) * eqsys.X_d_olg
 
     def reduced_htm_dis_coefficients(self, tau_d=None, mu=None):
-        """
-        Reduced homogeneous HtM DIS coefficients consistent with the finite-path solver.
-        """
         par = self.par
 
         tau_d_use = par.tau_d if tau_d is None else float(tau_d)
@@ -418,10 +374,12 @@ class PreannouncedDeficit_OLG:
             * (1.0 - omega)
             / Delta
         )
+
         C_y_olg = (
             (1.0 - beta * omega)
             * (1.0 - tau_y * (1.0 - omega) / Delta)
         )
+
         C_r_olg = (
             (1.0 - beta * omega)
             * (
@@ -432,7 +390,6 @@ class PreannouncedDeficit_OLG:
 
         mu_left = 1.0 - mu_use * (1.0 - tau_y)
 
-        # FIX: same corrected B_d as in model_coefficients()
         B_d = (
             (1.0 - mu_use) * X_d_olg
             + mu_use * ((1.0 - beta * omega) - tau_d_use)
@@ -461,13 +418,6 @@ class PreannouncedDeficit_OLG:
         }
 
     def homogeneous_system_matrix(self, tau_d=None):
-        """
-        BK matrix for:
-            E_t [d_{t+1}, y_{t+1}, pi_{t+1}]' = A_mu [d_t, y_t, pi_t]'
-
-        The real-rate rule is:
-            r_t = alpha_y*y_t + alpha_pi*pi_t.
-        """
         par = self.par
         tau_d_use = par.tau_d if tau_d is None else float(tau_d)
 
@@ -608,20 +558,14 @@ class PreannouncedDeficit_OLG:
         b = np.zeros(N)
         row = 0
 
-        # Aggregate demand with HtM block
         for t in range(n):
             A[row, idx("y", t)] = eqsys.mu_left
             A[row, idx("d", t)] = -eqsys.B_d
             A[row, idx("Sy", t)] = -eqsys.B_y
             A[row, idx("Sr", t)] = +eqsys.B_r
-
-            # FIX:
-            # HtM households respond to current implementation e_t.
-            # Savers respond to the discounted announced transfer path S_e[t].
             b[row] = eqsys.B_e_current * e[t] + eqsys.B_e_news * S_e[t]
             row += 1
 
-        # Sy recursion
         for t in range(n):
             A[row, idx("Sy", t)] = 1.0
             A[row, idx("y", t)] = -1.0
@@ -629,7 +573,6 @@ class PreannouncedDeficit_OLG:
                 A[row, idx("Sy", t + 1)] = -par.beta * par.omega
             row += 1
 
-        # Sr recursion
         for t in range(n):
             A[row, idx("Sr", t)] = 1.0
             A[row, idx("y", t)] = -par.alpha_y
@@ -638,7 +581,6 @@ class PreannouncedDeficit_OLG:
                 A[row, idx("Sr", t + 1)] = -par.beta * par.omega
             row += 1
 
-        # NKPC
         for t in range(n):
             A[row, idx("pi", t)] = 1.0
             A[row, idx("y", t)] = -par.kappa
@@ -646,7 +588,6 @@ class PreannouncedDeficit_OLG:
                 A[row, idx("pi", t + 1)] = -par.beta
             row += 1
 
-        # Debt law of motion
         for t in range(par.T):
             A[row, idx("d", t + 1)] = 1.0
             A[row, idx("d", t)] = -(1.0 - par.tau_d) / par.beta
@@ -655,7 +596,6 @@ class PreannouncedDeficit_OLG:
             b[row] = (1.0 - par.tau_d) / par.beta * e[t]
             row += 1
 
-        # Initial debt condition: d_0 = -Dbar*pi_0
         A[row, idx("d", 0)] = 1.0
         A[row, idx("pi", 0)] = par.Dbar
         row += 1
@@ -713,23 +653,13 @@ class PreannouncedDeficit_OLG:
         self.sol.debt_end[:-1] = self.sol.d[1:]
         self.sol.debt_end[-1] = np.nan
 
-        # FIX:
-        # In the closed-form surprise-shock code, q_t is the fiscal state d_t + e_t.
         self.sol.q = self.sol.d + self.sol.e
-
         self.sol.eps0 = self.eps0
 
         self.compute_financing_share()
         return self.sol
 
     def compute_financing_share(self):
-        """
-        FIX:
-        Correct self-financing definition with variable real rates.
-
-        ν = (tax-base gain + debt-erosion gain)
-            / (PV deficit + PV servicing cost)
-        """
         par = self.par
         sol = self.sol
         k = np.arange(len(sol.y))
@@ -758,13 +688,10 @@ class PreannouncedDeficit_OLG:
         sol.fiscal_adjustment = float(fiscal_adjustment)
         sol.residual_need = float(fiscal_adjustment / denom)
 
-        # Government budget identity diagnostic.
-        # Should be close to zero when T is large enough.
         sol.budget_identity_error = float(
             denom - fiscal_adjustment - tax_base_gain - debt_erosion_gain
         )
 
-        # Old normalization kept only for debugging / comparison.
         sol.share_actual_over_eps0 = float((tax_base_gain + debt_erosion_gain) / self.eps0)
 
     def convergence_check(self, announce_t=None, implement_t=None, T_list=(160, 240, 360)):
@@ -976,134 +903,33 @@ class PreannouncedDeficit_OLG:
             )
             first_patch = False
 
+    def _get_ylim(self, ylims, key):
+        if ylims is None:
+            return None
+        if not isinstance(ylims, dict):
+            raise TypeError("ylims must be a dictionary or None.")
+        return ylims.get(key, None)
+
+    def _apply_ylim(self, ax, ylim, key_name=""):
+        if ylim is None:
+            return
+
+        if not isinstance(ylim, (tuple, list)):
+            raise TypeError(
+                f"ylim for '{key_name}' must be a tuple/list like (0, None), not {ylim}."
+            )
+
+        if len(ylim) != 2:
+            raise ValueError(
+                f"ylim for '{key_name}' must have length 2, e.g. (0, None)."
+            )
+
+        ymin, ymax = ylim
+        ax.set_ylim(bottom=ymin, top=ymax)
+
     # ---------------------------------------------------------------------
     # Plotting
     # ---------------------------------------------------------------------
-
-    def plot_self_financing_vs_tau(
-        self,
-        announce_t=None,
-        implement_t=None,
-        tau_d_grid=None,
-        selected_tau_d=None,
-        figsize=(6.4, 4.8),
-        savepath=None,
-        show=True,
-    ):
-        par = self.par
-        colors = self.style_colors()
-
-        if announce_t is None:
-            announce_t = par.announce_t
-        if implement_t is None:
-            implement_t = par.implement_t
-        if selected_tau_d is None:
-            selected_tau_d = [0.001, 0.026, 0.086]
-
-        out = self._compute_self_financing_curve_tau(
-            announce_t=announce_t,
-            implement_t=implement_t,
-            tau_d_grid=tau_d_grid,
-        )
-
-        tau = out["tau_d_grid"]
-        valid = out["valid_mask"]
-        nu_total = out["share_total"]
-        nu_price = out["share_price"]
-
-        line_colors = self._get_line_colors(len(selected_tau_d))
-
-        with mpl.rc_context(
-            {
-                "font.family": "Times New Roman",
-                "font.size": 13,
-                "axes.titlesize": 17,
-                "axes.labelsize": 14,
-                "legend.fontsize": 12,
-                "xtick.labelsize": 12,
-                "ytick.labelsize": 12,
-                "mathtext.fontset": "stix",
-            }
-        ):
-            fig, ax = plt.subplots(figsize=figsize)
-
-            self._shade_invalid_tau_regions(
-                ax=ax,
-                tau_d_grid=tau,
-                valid_mask=valid,
-                label="No unique bounded eq.",
-            )
-
-            tau_valid = tau[valid]
-            nu_price_valid = nu_price[valid]
-            nu_total_valid = nu_total[valid]
-
-            if tau_valid.size > 0:
-                ax.fill_between(
-                    tau_valid,
-                    0.0,
-                    nu_price_valid,
-                    color=colors["finance_price"],
-                    alpha=0.95,
-                    label="Date-0 Inflation",
-                    zorder=2,
-                )
-                ax.fill_between(
-                    tau_valid,
-                    nu_price_valid,
-                    nu_total_valid,
-                    color=colors["finance_tax"],
-                    alpha=0.95,
-                    label="Tax Base",
-                    zorder=3,
-                )
-                ax.plot(
-                    tau_valid,
-                    nu_total_valid,
-                    color="black",
-                    lw=1.4,
-                    alpha=0.7,
-                    zorder=4,
-                )
-
-            for color, tau0 in zip(line_colors, selected_tau_d):
-                idx = np.argmin(np.abs(tau - tau0))
-                if valid[idx]:
-                    ax.scatter(
-                        tau[idx],
-                        nu_total[idx],
-                        s=55,
-                        color=color,
-                        edgecolor="black",
-                        linewidth=0.8,
-                        zorder=5,
-                    )
-
-            ax.axhline(1.0, color="black", ls="--", alpha=0.45, linewidth=1.2)
-
-            ax.set_title(rf"Self-financing share $\nu$ at horizon $s={implement_t}$")
-            ax.set_xlabel(r"$\tau_d$")
-            ax.set_xlim(0.0, 1.0)
-            ax.grid(True, alpha=0.25)
-
-            ymin, ymax = ax.get_ylim()
-            ax.set_ylim(min(0.0, ymin), None) #max(1.05, ymax))
-
-            legend_handles = [
-                Patch(facecolor=colors["finance_price"], edgecolor="none", label="Date-0 Inflation"),
-                Patch(facecolor=colors["finance_tax"], edgecolor="none", label="Tax Base"),
-                Patch(facecolor="grey", alpha=0.55, edgecolor="none", label="No unique bounded eq."),
-                Line2D([0], [0], color="black", ls="--", alpha=0.45, label=r"$\nu=1$"),
-            ]
-            ax.legend(handles=legend_handles, loc="upper right", frameon=True)
-
-            if savepath is not None:
-                fig.savefig(savepath, dpi=200, bbox_inches="tight")
-                if self.verbose:
-                    print(f"saved to: {savepath}")
-
-            _maybe_show(show)
-            plt.close(fig)
 
     def plot_eps0_irfs(
         self,
@@ -1116,6 +942,7 @@ class PreannouncedDeficit_OLG:
         savepath=None,
         ylim0=True,
         show=True,
+        ylims=None,
     ):
         par = self.par
         colors = self.style_colors()
@@ -1153,6 +980,7 @@ class PreannouncedDeficit_OLG:
                     continue
 
                 par.tau_d = float(tau_d)
+
                 self.solve_model(
                     announce_t=announce_t,
                     implement_t=implement_t,
@@ -1205,8 +1033,8 @@ class PreannouncedDeficit_OLG:
                     hspace=0.34,
                 )
 
-                # Output
                 ax = axes[0, 0]
+                ax_output = ax
                 for color, res in zip(selected_colors, selected_results):
                     ax.plot(res.t, res.y, lw=2.8, color=color)
 
@@ -1217,8 +1045,8 @@ class PreannouncedDeficit_OLG:
                 ax.set_xlim(0, min(int(x_plot_max), int(selected_results[0].t[-1])))
                 ax.grid(True, alpha=0.25)
 
-                # Debt
                 ax = axes[0, 1]
+                ax_debt = ax
                 for color, res in zip(selected_colors, selected_results):
                     ax.plot(res.t, res.debt_end, lw=2.8, color=color)
 
@@ -1228,9 +1056,10 @@ class PreannouncedDeficit_OLG:
                 ax.set_xlim(0, min(int(x_plot_max), int(selected_results[0].t[-1])))
                 ax.grid(True, alpha=0.25)
 
-                # Inflation and interest rates
                 ax = axes[1, 0]
+                ax_rates_left = ax
                 ax_r = ax.twinx()
+                ax_rates_right = ax_r
 
                 for color, res in zip(selected_colors, selected_results):
                     ax.plot(res.t, res.pi, lw=2.5, color=color, ls="--")
@@ -1252,8 +1081,8 @@ class PreannouncedDeficit_OLG:
                 ]
                 ax.legend(handles=style_handles, loc="upper right", frameon=True)
 
-                # Self-financing
                 ax = axes[1, 1]
+                ax_self_financing = ax
 
                 self._shade_invalid_tau_regions(
                     ax=ax,
@@ -1323,12 +1152,23 @@ class PreannouncedDeficit_OLG:
                 ax.legend(handles=legend_handles, loc="upper right", frameon=True)
 
                 if ylim0:
-                    for ax0 in [axes[0, 0], axes[0, 1]]:
+                    for ax0 in [ax_output, ax_debt]:
                         ymin, ymax = ax0.get_ylim()
-                        ax0.set_ylim(0.0, max(ymax, 1.05) if ax0 is axes[1, 1] else ymax)
+                        ax0.set_ylim(0.0, ymax)
+
+                self._apply_ylim(ax_output, self._get_ylim(ylims, "fig1_output"), "fig1_output")
+                self._apply_ylim(ax_debt, self._get_ylim(ylims, "fig1_debt"), "fig1_debt")
+                self._apply_ylim(ax_rates_left, self._get_ylim(ylims, "fig1_rates_left"), "fig1_rates_left")
+                self._apply_ylim(ax_rates_right, self._get_ylim(ylims, "fig1_rates_right"), "fig1_rates_right")
+                self._apply_ylim(
+                    ax_self_financing,
+                    self._get_ylim(ylims, "fig1_self_financing"),
+                    "fig1_self_financing",
+                )
 
                 tmax = min(int(x_plot_max), int(selected_results[0].t[-1]))
                 xticks = np.arange(0, tmax + 1, 10)
+
                 for ax0 in [axes[0, 0], axes[0, 1], axes[1, 0]]:
                     ax0.set_xticks(xticks)
                     ax0.tick_params(axis="x", labelbottom=True)
@@ -1350,7 +1190,7 @@ class PreannouncedDeficit_OLG:
                 fig.align_ylabels([axes[0, 0], axes[1, 0]])
 
                 if savepath is not None:
-                    fig.savefig(savepath, dpi=200, bbox_inches="tight")
+                    fig.savefig(savepath, dpi=600, bbox_inches="tight")
                     if self.verbose:
                         print(f"saved to: {savepath}")
 
@@ -1370,6 +1210,7 @@ class PreannouncedDeficit_OLG:
         figsize=(9, 7),
         savepath=None,
         show=True,
+        ylims=None,
     ):
         par = self.par
 
@@ -1445,8 +1286,14 @@ class PreannouncedDeficit_OLG:
                 ymin, ymax = ax.get_ylim()
                 ax.set_ylim(min(ymin, 0.0), max(ymax, 1.05))
 
+                self._apply_ylim(
+                    ax,
+                    self._get_ylim(ylims, "delay_sweep"),
+                    "delay_sweep",
+                )
+
                 if savepath is not None:
-                    fig.savefig(savepath, dpi=200, bbox_inches="tight")
+                    fig.savefig(savepath, dpi=600, bbox_inches="tight")
                     if self.verbose:
                         print(f"saved to: {savepath}")
 
@@ -1547,6 +1394,7 @@ class PreannouncedDeficit_OLG:
         savepath_main=None,
         savepath_delay=None,
         show=True,
+        ylims=None,
     ):
         if tau_d_list is None:
             tau_d_list = [0.001, 0.026, 0.086]
@@ -1560,6 +1408,7 @@ class PreannouncedDeficit_OLG:
             savepath=savepath_main,
             ylim0=True,
             show=show,
+            ylims=ylims,
         )
 
         self.plot_implementation_delay_sweep(
@@ -1567,15 +1416,12 @@ class PreannouncedDeficit_OLG:
             truncation_T=truncation_T,
             savepath=savepath_delay,
             show=show,
+            ylims=ylims,
         )
 
 
 def quick_self_test():
     print("\n--- quick self test ---")
-
-    # ------------------------------------------------------------------
-    # Test 1: mu=0 nesting of old finite-path system and new HtM system
-    # ------------------------------------------------------------------
 
     delays = [0, 1, 5, 20, 40]
     tau_list = [0.001, 0.026, 0.086]
@@ -1639,10 +1485,6 @@ def quick_self_test():
             f"max budget err={max_budg_err:.3e}"
         )
 
-    # ------------------------------------------------------------------
-    # Test 2: active-rule determinacy table
-    # ------------------------------------------------------------------
-
     print("\nactive-rule determinacy table:")
 
     m = PreannouncedDeficit_OLG(verbose=False, eps0=1.0)
@@ -1669,10 +1511,6 @@ def quick_self_test():
             f"eigvals={eig_short}"
         )
 
-    # ------------------------------------------------------------------
-    # Test 3: self-financing curve smoke test
-    # ------------------------------------------------------------------
-
     print("\nself-financing curve smoke test:")
 
     p.tau_d = 0.026
@@ -1690,10 +1528,6 @@ def quick_self_test():
     print("  valid_mask =", sf["valid_mask"])
     print("  total_nu   =", np.round(sf["share_total"], 6))
     print("  old_eps0   =", np.round(sf["share_old_eps0_norm"], 6))
-
-    # ------------------------------------------------------------------
-    # Test 4: mu should actually change the solution
-    # ------------------------------------------------------------------
 
     print("\nmu sensitivity smoke test:")
 
@@ -1735,7 +1569,7 @@ if __name__ == "__main__":
     model = PreannouncedDeficit_OLG(verbose=True, eps0=1.0)
     par = model.par
 
-    par.mu = 0.001
+    par.mu = 0.073
     par.beta = 0.99**0.25
     par.omega = 0.865
     par.sigma = 1.0
@@ -1745,30 +1579,66 @@ if __name__ == "__main__":
     par.Dbar = 1.04
 
     # Active real-rate rule:
-    # r_t = 0.5*y_t + 0.5*pi_t
-    par.alpha_y = 0.5
-    par.alpha_pi = 0.5
+    # r_t = 0.08*y_t + 1.04*pi_t
+    par.alpha_y = 0.0#0.08
+    par.alpha_pi = 0.0# 1.04
 
     par.T = 500
     par.announce_t = 0
-    par.implement_t = 0
-    par.x_plot_max = 30
-    par.horizon_x_max = 40
+    par.implement_t = 20
+    par.horizon_x_max = 80 # sweep horizon
+
+    # ================================================================
+    # Y-LIMIT CONTROL PANEL
+    # ================================================================
+    # Use None to keep automatic matplotlib limits.
+    # Use (0, None) for lower bound only.
+    # Use (0, 0.2) for exact lower and upper bounds.
+    #
+    # Figure 1 / 2x2 IRF figure:
+    #   "fig1_output"          -> output y_t
+    #   "fig1_debt"            -> public debt d_{t+1}
+    #   "fig1_rates_left"      -> left axis: pi_t and i_t
+    #   "fig1_rates_right"     -> right axis: r_t
+    #   "fig1_self_financing"  -> self-financing panel
+    #
+    # Standalone tau_d self-financing plot:
+    #   "self_financing_vs_tau"
+    #
+    # Implementation-delay plot:
+    #   "delay_sweep"
+    # ================================================================
+
+    YLIMS = {
+        "fig1_output": (None,None),
+        "fig1_debt": (None, None),
+        "fig1_rates_left": None,
+        "fig1_rates_right": None,
+
+        # Figure 1 self-financing subplot
+        "fig1_self_financing": (0, 1.0),
+
+        # Implementation-delay plot
+        "delay_sweep": (0, None),
+        # "delay_sweep": (0, 0.2),
+    }
 
     model.run(
         truncation_T=600,
-        x_plot_max=30,
+        x_plot_max=40,
         #tau_d_list=[0.004, 0.026, 0.085],
-        tau_d_list=[0.0, 0.1,0.3,0.5,1.0],
-        savepath_main="preannounced_deficit_multi_tau_controls_mu_active_checked.png",
-        savepath_delay="preannounced_delay_sweep_mu_active_checked.png",
+        tau_d_list=[0.0, 0.1, 0.3, 0.5, 1.0],
+        savepath_main="appendix_panel_neutral_delay0_taudsweep.png",
+        #savepath_delay="appendixdelay_neutral_delay20.png",
         show=True,
+        ylims=YLIMS,
     )
 
-    model.plot_self_financing_vs_tau(
-        announce_t=0,
-        implement_t=20,
-        selected_tau_d=[0.0, 0.004, 0.026, 0.085, 0.1, 0.3, 0.5, 1.0],
-        savepath="preannounced_self_financing_vs_tau_mu_active_checked.png",
-        show=True,
-    )
+    # model.plot_self_financing_vs_tau(
+    #     announce_t=0,
+    #     implement_t=20,
+    #     selected_tau_d=[0.0, 0.004, 0.026, 0.085, 0.1, 0.3, 0.5, 1.0],
+    #     savepath="preannounced_self_financing_vs_tau_mu_active_checked.png",
+    #     show=True,
+    #     ylims=YLIMS,
+    # )

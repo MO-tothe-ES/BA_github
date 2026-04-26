@@ -1232,6 +1232,216 @@ class Taud_taylor_OLG:
             plt.tight_layout()
             plt.show()
 
+    def decompose_persistence_at_tau(
+        self,
+        tau_d=0.10,
+        alpha_y_val=0.5,
+        alpha_pi_val=0.5,
+        include_neutral=True,
+        tol=1e-9,
+    ):
+        """
+        Decompose the stable root lambda_s at a chosen tau_d.
+
+        The decomposition is:
+            lambda_s =
+                (1 - tau_d)/beta
+                - (tau_y/beta) * chi
+                + Dbar * (alpha_y * chi + alpha_pi * eta)
+
+        where along the stable path:
+            y_t  = chi q_t
+            pi_t = eta q_t
+            r_t  = (alpha_y * chi + alpha_pi * eta) q_t
+
+        The function prints and returns results for:
+            - r_t = 0                      (optional)
+            - r_t = alpha_y_val * y_t
+            - r_t = alpha_pi_val * pi_t
+            - r_t = alpha_y_val*y_t + alpha_pi_val*pi_t
+        """
+
+        par = self.par
+
+        beta = par.beta
+        tau_y = par.tau_y
+        Dbar = par.Dbar
+        kappa = par.kappa
+
+        cases = []
+
+        if include_neutral:
+            cases.append({
+                "name": r"$r_t=0$",
+                "alpha_y": 0.0,
+                "alpha_pi": 0.0,
+            })
+
+        cases += [
+            {
+                "name": rf"$r_t={alpha_y_val:.2f}y_t$",
+                "alpha_y": alpha_y_val,
+                "alpha_pi": 0.0,
+            },
+            {
+                "name": rf"$r_t={alpha_pi_val:.2f}\pi_t$",
+                "alpha_y": 0.0,
+                "alpha_pi": alpha_pi_val,
+            },
+            {
+                "name": rf"$r_t={alpha_y_val:.2f}y_t+{alpha_pi_val:.2f}\pi_t$",
+                "alpha_y": alpha_y_val,
+                "alpha_pi": alpha_pi_val,
+            },
+        ]
+
+        rows = []
+
+        for case in cases:
+            alpha_y = case["alpha_y"]
+            alpha_pi = case["alpha_pi"]
+
+            # Convert desired real-rate feedbacks into your nominal-rule parameters:
+            # alpha_y  = phi + kappa/beta
+            # alpha_pi = psi - 1/beta
+            phi_case = alpha_y - kappa / beta
+            psi_case = alpha_pi + 1.0 / beta
+
+            A = self.system_matrix_given_policy(
+                psi=psi_case,
+                phi=phi_case,
+                tau_d=tau_d,
+            )
+
+            eigvals, eigvecs = np.linalg.eig(A)
+
+            stable_idx = [i for i, val in enumerate(eigvals) if abs(val) < 1.0 - tol]
+            unstable_idx = [i for i, val in enumerate(eigvals) if abs(val) > 1.0 + tol]
+
+            if not (len(stable_idx) == 1 and len(unstable_idx) == 2):
+                rows.append({
+                    "case": case["name"],
+                    "status": "No unique bounded equilibrium",
+                    "lambda_s": np.nan,
+                    "chi": np.nan,
+                    "eta": np.nan,
+                    "rollover": np.nan,
+                    "tax_base": np.nan,
+                    "real_rate": np.nan,
+                    "reconstructed": np.nan,
+                    "residual": np.nan,
+                })
+                continue
+
+            idx = stable_idx[0]
+            lambda_s = eigvals[idx]
+            v_s = eigvecs[:, idx]
+
+            if abs(lambda_s.imag) > 1e-8 or abs(v_s[0]) < 1e-12:
+                rows.append({
+                    "case": case["name"],
+                    "status": "Complex / invalid stable root",
+                    "lambda_s": np.nan,
+                    "chi": np.nan,
+                    "eta": np.nan,
+                    "rollover": np.nan,
+                    "tax_base": np.nan,
+                    "real_rate": np.nan,
+                    "reconstructed": np.nan,
+                    "residual": np.nan,
+                })
+                continue
+
+            v_s = v_s / v_s[0]
+
+            if np.max(np.abs(v_s.imag)) > 1e-8:
+                rows.append({
+                    "case": case["name"],
+                    "status": "Complex stable eigenvector",
+                    "lambda_s": np.nan,
+                    "chi": np.nan,
+                    "eta": np.nan,
+                    "rollover": np.nan,
+                    "tax_base": np.nan,
+                    "real_rate": np.nan,
+                    "reconstructed": np.nan,
+                    "residual": np.nan,
+                })
+                continue
+
+            lambda_s = float(np.real(lambda_s))
+            v_s = np.real(v_s)
+
+            chi = float(v_s[1])
+            eta = float(v_s[2])
+
+            rollover_term = (1.0 - tau_d) / beta
+            tax_base_term = -(tau_y / beta) * chi
+            real_rate_loading = alpha_y * chi + alpha_pi * eta
+            real_rate_term = Dbar * real_rate_loading
+
+            reconstructed_lambda = rollover_term + tax_base_term + real_rate_term
+            residual = lambda_s - reconstructed_lambda
+
+            eta_from_nkpc = kappa * chi / (1.0 - beta * lambda_s)
+
+            rows.append({
+                "case": case["name"],
+                "status": "OK",
+                "lambda_s": lambda_s,
+                "chi": chi,
+                "eta": eta,
+                "eta_from_nkpc": eta_from_nkpc,
+                "alpha_y": alpha_y,
+                "alpha_pi": alpha_pi,
+                "r_over_q": real_rate_loading,
+                "rollover": rollover_term,
+                "tax_base": tax_base_term,
+                "real_rate": real_rate_term,
+                "reconstructed": reconstructed_lambda,
+                "residual": residual,
+            })
+
+        # Pretty print
+        print("\n" + "=" * 100)
+        print(rf"Stable-root decomposition at tau_d = {tau_d:.4f}")
+        print("=" * 100)
+
+        header = (
+            f"{'case':<30}"
+            f"{'lambda':>10}"
+            f"{'chi':>10}"
+            f"{'eta':>10}"
+            f"{'rollover':>12}"
+            f"{'tax base':>12}"
+            f"{'real rate':>12}"
+            f"{'sum':>10}"
+            f"{'resid':>10}"
+        )
+        print(header)
+        print("-" * 100)
+
+        for row in rows:
+            if row["status"] != "OK":
+                print(f"{row['case']:<30} {row['status']}")
+                continue
+
+            print(
+                f"{row['case']:<30}"
+                f"{row['lambda_s']:>10.4f}"
+                f"{row['chi']:>10.4f}"
+                f"{row['eta']:>10.4f}"
+                f"{row['rollover']:>12.4f}"
+                f"{row['tax_base']:>12.4f}"
+                f"{row['real_rate']:>12.4f}"
+                f"{row['reconstructed']:>10.4f}"
+                f"{row['residual']:>10.2e}"
+            )
+
+        print("=" * 100)
+
+        return rows
+
 
     def run(self):
         self.compute_tau_sweep()
@@ -1247,16 +1457,18 @@ par.beta  = 0.99**0.25
 par.omega = 0.75
 par.tau_y = 1.0 / 3.0
 par.sigma = 1.0
-par.kappa = 0.1
+par.kappa = 0.05
 par.Dbar  = 1.04
-par.psi   = 0.5+ 1.0 / par.beta 
-par.phi   = 0.5- par.kappa / par.beta
+par.psi   = 0.0 + 1.0 / par.beta 
+par.phi   = 0.0 - par.kappa / par.beta
 par.tau_d = None
 par.T = 30
 
 
-model.figname = "panel_thm1_moes.png"
-model.run()
+model.figname = "skrald.png"
+model.decompose_persistence_at_tau(tau_d=0.1)
+#model.run()
+
 
 # model.plot_self_financing_grid(
 #     psi_list=[1.25, 1.5, 2.0],
@@ -1269,7 +1481,7 @@ a_pi = 1 / model.par.beta
 res = model.map_condition_failure_from_matrix(
     phi_grid=np.linspace(a_y-0.5, a_y+1.0, 300),
     psi_grid=np.linspace(a_pi-0.5, a_pi+1.0, 300),
-    tau_d_grid=np.linspace(0.000, 1.0, 4000),
+    tau_d_grid=np.linspace(0.000, 1.0, 5000),
     make_plot=True,
 )
 
