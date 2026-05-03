@@ -1136,7 +1136,7 @@ class PreannouncedDeficit_OLG:
                             zorder=5,
                         )
 
-                ax.axhline(1.0, color="black", ls="--", alpha=0.45, linewidth=1.2)
+                # ax.axhline(1.0, color="black", ls="--", alpha=0.45, linewidth=1.2)
 
                 ax.set_title(r"Self-financing share $\nu$")
                 ax.set_xlabel(r"$\tau_d$")
@@ -1147,7 +1147,7 @@ class PreannouncedDeficit_OLG:
                     Patch(facecolor=colors["finance_price"], edgecolor="none", label="Date-0 Inflation"),
                     Patch(facecolor=colors["finance_tax"], edgecolor="none", label="Tax Base"),
                     Patch(facecolor="grey", alpha=0.55, edgecolor="none", label="No unique bounded eq."),
-                    Line2D([0], [0], color="black", ls="--", alpha=0.45, label=r"$\nu=1$"),
+                    # Line2D([0], [0], color="black", ls="--", alpha=0.45, label=r"$\nu=1$"),
                 ]
                 ax.legend(handles=legend_handles, loc="upper right", frameon=True)
 
@@ -1569,7 +1569,7 @@ if __name__ == "__main__":
     model = PreannouncedDeficit_OLG(verbose=True, eps0=1.0)
     par = model.par
 
-    par.mu = 0.073
+    par.mu = 0.073 # INDSTIL
     par.beta = 0.99**0.25
     par.omega = 0.865
     par.sigma = 1.0
@@ -1580,43 +1580,24 @@ if __name__ == "__main__":
 
     # Active real-rate rule:
     # r_t = 0.08*y_t + 1.04*pi_t
-    par.alpha_y = 0.0#0.08
-    par.alpha_pi = 0.0# 1.04
+    # INDSTIL
+    par.alpha_y = 0.0862
+    par.alpha_pi = 1.0275
 
-    par.T = 500
+    par.T = 800
     par.announce_t = 0
-    par.implement_t = 20
-    par.horizon_x_max = 80 # sweep horizon
+    par.implement_t = 20 # INDSTIL
+    par.horizon_x_max = 40 # sweep horizon
 
-    # ================================================================
-    # Y-LIMIT CONTROL PANEL
-    # ================================================================
-    # Use None to keep automatic matplotlib limits.
-    # Use (0, None) for lower bound only.
-    # Use (0, 0.2) for exact lower and upper bounds.
-    #
-    # Figure 1 / 2x2 IRF figure:
-    #   "fig1_output"          -> output y_t
-    #   "fig1_debt"            -> public debt d_{t+1}
-    #   "fig1_rates_left"      -> left axis: pi_t and i_t
-    #   "fig1_rates_right"     -> right axis: r_t
-    #   "fig1_self_financing"  -> self-financing panel
-    #
-    # Standalone tau_d self-financing plot:
-    #   "self_financing_vs_tau"
-    #
-    # Implementation-delay plot:
-    #   "delay_sweep"
-    # ================================================================
 
     YLIMS = {
-        "fig1_output": (None,None),
-        "fig1_debt": (None, None),
+        "fig1_output": (-0.14, 0.18),
+        "fig1_debt":  (None, None),
         "fig1_rates_left": None,
         "fig1_rates_right": None,
 
         # Figure 1 self-financing subplot
-        "fig1_self_financing": (0, 1.0),
+        "fig1_self_financing": (0, 0.5),
 
         # Implementation-delay plot
         "delay_sweep": (0, None),
@@ -1626,19 +1607,10 @@ if __name__ == "__main__":
     model.run(
         truncation_T=600,
         x_plot_max=40,
-        #tau_d_list=[0.004, 0.026, 0.085],
-        tau_d_list=[0.0, 0.1, 0.3, 0.5, 1.0],
-        savepath_main="appendix_panel_neutral_delay0_taudsweep.png",
-        #savepath_delay="appendixdelay_neutral_delay20.png",
+        tau_d_list=[0.004, 0.026, 0.085],
+        #tau_d_list=[0.0, 0.004, 0.026, 0.085, 0.1, 0.3, 0.5, 1.0],
+        savepath_main="figures/panel_active_delay20.png",
+        # savepath_delay="figures/delay_active.png",
         show=True,
         ylims=YLIMS,
     )
-
-    # model.plot_self_financing_vs_tau(
-    #     announce_t=0,
-    #     implement_t=20,
-    #     selected_tau_d=[0.0, 0.004, 0.026, 0.085, 0.1, 0.3, 0.5, 1.0],
-    #     savepath="preannounced_self_financing_vs_tau_mu_active_checked.png",
-    #     show=True,
-    #     ylims=YLIMS,
-    # )
