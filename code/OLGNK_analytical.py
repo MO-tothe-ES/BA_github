@@ -1187,7 +1187,7 @@ class Taud_taylor_OLG:
             plot_array[has_enough_points] = 0.0
             plot_array[failure_exists] = 1.0
 
-            cmap = ListedColormap(["#93C5FD", "#6B7280"])
+            cmap = ListedColormap(["#F7ABC7", "#8C0D4D"])
             cmap.set_bad(color="white")
 
             fig, ax = plt.subplots(figsize=(9, 7))
@@ -1211,12 +1211,12 @@ class Taud_taylor_OLG:
             ax.axhline(phi_ref, color="black", linestyle="--", linewidth=1.8, alpha=0.9)
 
             legend_handles = [
-                Patch(facecolor="#93C5FD", edgecolor="black",
+                Patch(facecolor="#F7ABC7", edgecolor="black",
                     label=r"$\tau_d \chi'(\tau_d) < \chi(\tau_d) \forall \tau_d$"),
-                Patch(facecolor="#6B7280", edgecolor="black",
+                Patch(facecolor="#8C0D4D", edgecolor="black",
                     label=r"$\exists \tau_d : \tau_d \chi'(\tau_d) > \chi(\tau_d)$"),
                 Patch(facecolor="white", edgecolor="black",
-                    label="Indeterminate for all $\tau_d$"),
+                    label=r"Indeterminate for all $\tau_d$"),
                 Line2D([0], [0], color="black", linestyle="--", linewidth=1.8,
                     label=r"$\psi = 1/\beta$ and $\phi = -\kappa/\beta$")
             ]
@@ -1225,11 +1225,12 @@ class Taud_taylor_OLG:
 
             ax.set_xlabel(r"$\psi$")
             ax.set_ylabel(r"$\phi$")
-            ax.set_title(
-                r"Existence of $\tau_d$ such that "
-                r"$\tau_d \chi'(\tau_d)-\chi(\tau_d)\geq 0$"
-            )
+            # ax.set_title(
+            #     r"Existence of $\tau_d$ that breaks monotonocity such that "
+            #     r"$\tau_d \chi'(\tau_d)-\chi(\tau_d)\geq 0$"
+            # )
             plt.tight_layout()
+            fig.savefig("appendix/thm1_monotonocity_condition.png", dpi=600, bbox_inches="tight")
             plt.show()
 
     def decompose_persistence_at_tau(
@@ -1454,20 +1455,21 @@ model = Taud_taylor_OLG()
 
 par = model.par
 par.beta  = 0.99**0.25
-par.omega = 0.75
+par.omega = 0.862
 par.tau_y = 1.0 / 3.0
 par.sigma = 1.0
-par.kappa = 0.05
+par.kappa = 0.0062
 par.Dbar  = 1.04
-par.psi   = 0.0 + 1.0 / par.beta 
-par.phi   = 0.0 - par.kappa / par.beta
+par.psi   = 0.5 + 1.0 / par.beta 
+par.phi   = 0.5 - par.kappa / par.beta 
 par.tau_d = None
 par.T = 30
 
 
+
 model.figname = "skrald.png"
-model.decompose_persistence_at_tau(tau_d=0.1)
-#model.run()
+#model.decompose_persistence_at_tau(tau_d=0.1)
+model.run()
 
 
 # model.plot_self_financing_grid(
@@ -1479,9 +1481,9 @@ model.decompose_persistence_at_tau(tau_d=0.1)
 a_y  = -model.par.kappa / model.par.beta
 a_pi = 1 / model.par.beta
 res = model.map_condition_failure_from_matrix(
-    phi_grid=np.linspace(a_y-0.5, a_y+1.0, 300),
-    psi_grid=np.linspace(a_pi-0.5, a_pi+1.0, 300),
-    tau_d_grid=np.linspace(0.000, 1.0, 5000),
+    phi_grid=np.linspace(a_y-0.2, a_y+2.0, 20),
+    psi_grid=np.linspace(a_pi-0.2, a_pi+1, 20),
+    tau_d_grid=np.linspace(0.0, 1.0, 5000),
     make_plot=True,
 )
 

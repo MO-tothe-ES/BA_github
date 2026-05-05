@@ -1271,9 +1271,9 @@ class PreannouncedDeficit_OLG:
 
                 ax.axhline(1.0, color="black", ls="--", alpha=0.5, linewidth=1.2)
 
-                ax.set_title(r"Self-financing share $\nu(s)$")
+                ax.set_title(r"Self-financing share $\nu_s$")
                 ax.set_xlabel(r"Implementation date $s$")
-                ax.set_ylabel(r"$\nu(s)$")
+                ax.set_ylabel(r"$\nu_s$")
                 ax.set_xlim(float(np.min(implement_t_grid)), float(np.max(implement_t_grid)))
                 ax.grid(True, alpha=0.25)
 
@@ -1578,21 +1578,25 @@ if __name__ == "__main__":
     par.kappa = 0.0062
     par.Dbar = 1.04
 
+    # INDSTIL 
     # Active real-rate rule:
     # r_t = 0.08*y_t + 1.04*pi_t
-    # INDSTIL
-    par.alpha_y = 0.0862
+    par.alpha_y  = 0.0862
     par.alpha_pi = 1.0275
+
+    # alternativ realrente (robusthed):
+    # r_t = (0.5 + k/b)y_t + (1.5 - 1/b)pi_t
+    # par.alpha_y  = 0.5 +par.kappa/par.beta 
+    # par.alpha_pi = 1.5 -1/par.beta
 
     par.T = 800
     par.announce_t = 0
     par.implement_t = 20 # INDSTIL
     par.horizon_x_max = 40 # sweep horizon
 
-
     YLIMS = {
-        "fig1_output": (-0.14, 0.18),
-        "fig1_debt":  (None, None),
+        "fig1_output": (-0.05, 0.1),
+        "fig1_debt":  (-0.02, 1.2),
         "fig1_rates_left": None,
         "fig1_rates_right": None,
 
@@ -1609,8 +1613,8 @@ if __name__ == "__main__":
         x_plot_max=40,
         tau_d_list=[0.004, 0.026, 0.085],
         #tau_d_list=[0.0, 0.004, 0.026, 0.085, 0.1, 0.3, 0.5, 1.0],
-        savepath_main="figures/panel_active_delay20.png",
-        # savepath_delay="figures/delay_active.png",
+        savepath_main="appendix/alternativerealrate_active_delay20.png",
+        #savepath_delay="figures/delay_active.png",
         show=True,
         ylims=YLIMS,
     )
